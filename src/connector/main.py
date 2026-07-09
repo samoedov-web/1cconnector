@@ -26,6 +26,7 @@ from connector.reports.api import router as reports_router
 from connector.security import hash_password
 from connector.web.api import router as admin_router
 from connector.web.auth import router as auth_router
+from connector.web.users import router as users_router
 
 log = logging.getLogger("connector.main")
 
@@ -67,6 +68,7 @@ app.include_router(auth_router)
 app.include_router(onec_router)
 app.include_router(onec_sync_router)
 app.include_router(admin_router)
+app.include_router(users_router)
 app.include_router(reports_router)
 
 

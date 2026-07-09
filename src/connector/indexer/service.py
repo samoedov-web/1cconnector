@@ -59,6 +59,32 @@ def direction_for(transfer: RawTransfer, wallet_address: str) -> Direction:
     return Direction.OUT
 
 
+@dataclass(frozen=True)
+class MergedTransfer:
+    """Трансфер после сверки источников: cross_checked — виден минимум двум."""
+
+    transfer: RawTransfer
+    cross_checked: bool
+
+
+def merge_sources(per_source: list[list[RawTransfer]]) -> list[MergedTransfer]:
+    """Объединить выдачу нескольких источников (защита от неполных данных).
+
+    Берётся объединение множеств: транзакция, которую отдал хотя бы один
+    источник, не теряется; подтверждённая двумя и более помечается
+    cross_checked. Расхождения наборов логирует вызывающий код.
+    """
+    seen: dict[tuple[str, int], MergedTransfer] = {}
+    for transfers in per_source:
+        for t in transfers:
+            key = (t.tx_hash, t.log_index)
+            if key in seen:
+                seen[key] = MergedTransfer(seen[key].transfer, cross_checked=True)
+            else:
+                seen[key] = MergedTransfer(t, cross_checked=False)
+    return list(seen.values())
+
+
 class IndexerService:
     """Оркестрация одного цикла опроса для одного кошелька."""
 
@@ -69,7 +95,7 @@ class IndexerService:
         self,
         wallet: Wallet,
         network: Network,
-        transfers: list[RawTransfer],
+        transfers: list[MergedTransfer],
         latest_block: int,
     ) -> list[Transaction]:
         """Сохранить новые трансферы; дедупликация по (network, hash, log_index)."""
@@ -82,18 +108,22 @@ class IndexerService:
                 )
             ).scalars()
         }
-        for t in transfers:
+        for merged in transfers:
+            t = merged.transfer
             asset = assets.get(t.token_contract.lower())
             if asset is None:
                 continue
-            exists = await self.session.scalar(
-                select(Transaction.id).where(
+            existing = await self.session.scalar(
+                select(Transaction).where(
                     Transaction.network_id == network.id,
                     Transaction.tx_hash == t.tx_hash,
                     Transaction.log_index == t.log_index,
                 )
             )
-            if exists is not None:
+            if existing is not None:
+                # Второй источник подтвердил уже сохранённую транзакцию.
+                if merged.cross_checked and not existing.cross_checked:
+                    existing.cross_checked = True
                 continue
             change = resolve_status(t.block_number, latest_block, network.finality_depth)
             tx = Transaction(
@@ -115,11 +145,45 @@ class IndexerService:
                 finalized_at=utcnow() if change.status == TxStatus.FINAL else None,
                 raw_response=t.raw,
                 source=t.source,
+                cross_checked=merged.cross_checked,
             )
             self.session.add(tx)
             created.append(tx)
         await self.session.flush()
         return created
+
+    async def check_reorgs(self, network: Network, adapter) -> list[Transaction]:
+        """Перепроверить нефинальные транзакции в канонической цепочке.
+
+        Выпавшая из цепочки помечается orphaned (учёт её не увидит),
+        переехавшая в другой блок получает новый номер — подтверждения
+        пересчитает advance_finality. Финальные транзакции не трогаются:
+        порог N выбран так, что реорг глубже него — событие уровня сети.
+        """
+        pending = (
+            (
+                await self.session.execute(
+                    select(Transaction).where(
+                        Transaction.network_id == network.id,
+                        Transaction.status.in_([TxStatus.SEEN, TxStatus.CONFIRMED]),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        changed: list[Transaction] = []
+        for tx in pending:
+            block = await adapter.get_transaction_block(tx.tx_hash)
+            if block is None:
+                tx.status = TxStatus.ORPHANED
+                tx.confirmations = 0
+                changed.append(tx)
+            elif block != tx.block_number:
+                tx.block_number = block
+                changed.append(tx)
+        await self.session.flush()
+        return changed
 
     async def advance_finality(self, network: Network, latest_block: int) -> list[Transaction]:
         """Продвинуть незафинализированные транзакции сети по подтверждениям."""

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
@@ -24,9 +25,9 @@ from connector.config import settings
 from connector.db import SessionFactory, engine
 from connector.indexer.base import ChainAdapter
 from connector.indexer.ethereum import EthereumAdapter
-from connector.indexer.service import IndexerService
+from connector.indexer.service import IndexerService, merge_sources
 from connector.indexer.tron import TronAdapter
-from connector.models import Asset, Base, Network, Wallet
+from connector.models import Asset, Base, Network, Wallet, utcnow
 from connector.pipeline import TransactionPipeline
 from connector.rates.service import RateService
 from connector.rates.sources import CbrRateSource, CompositeRateSource, StaticPegSource
@@ -52,6 +53,30 @@ def build_adapters() -> dict[str, list[ChainAdapter]]:
         if url:
             adapters["ethereum"].append(EthereumAdapter(url, source_name=f"eth-{i}"))
     return {code: lst for code, lst in adapters.items() if lst}
+
+
+def scan_window(
+    backfill_from: datetime | None,
+    last_scanned_block: int | None,
+    last_scanned_at: datetime | None,
+    finality_depth: int,
+) -> tuple[int | None, datetime | None]:
+    """(from_block, since) для следующего опроса кошелька.
+
+    Первый опрос — полный бэкфилл с backfill_from; дальше — от курсора
+    с запасом на реорг (2 × порог финальности по блокам, 1 час по времени),
+    чтобы не перечитывать всю историю каждый цикл. Дедупликация в ingest
+    делает перекрытие окон безопасным.
+    """
+    if last_scanned_block is None and last_scanned_at is None:
+        return None, backfill_from
+    from_block = (
+        max(0, last_scanned_block - finality_depth * 2)
+        if last_scanned_block is not None
+        else None
+    )
+    since = last_scanned_at - timedelta(hours=1) if last_scanned_at is not None else None
+    return from_block, since
 
 
 def build_rate_service() -> RateService:
@@ -81,7 +106,6 @@ async def poll_network(
         )
         return
     latest_block = min(heads_ok)  # консервативно: по отстающему источнику
-    primary = sources[0]
 
     async with SessionFactory() as session:
         service = IndexerService(session)
@@ -101,10 +125,41 @@ async def poll_network(
             .all()
         )
         for wallet in wallets:
-            transfers = await primary.fetch_transfers(
-                wallet.address, tokens, since=wallet.backfill_from
+            from_block, since = scan_window(
+                wallet.backfill_from,
+                wallet.last_scanned_block,
+                wallet.last_scanned_at,
+                network.finality_depth,
             )
-            created = await service.ingest_transfers(wallet, network, transfers, latest_block)
+            # Кросс-проверка наборов: опрашиваются все источники, берётся
+            # объединение; транзакция, видимая минимум двум, — cross_checked.
+            per_source = await asyncio.gather(
+                *(
+                    s.fetch_transfers(wallet.address, tokens, since=since, from_block=from_block)
+                    for s in sources
+                ),
+                return_exceptions=True,
+            )
+            fetched = [r for r in per_source if isinstance(r, list)]
+            if not fetched:
+                log.error(
+                    "Сеть %s, кошелёк %s: ни один источник не отдал данные",
+                    network.code,
+                    wallet.address,
+                )
+                continue
+            if len(fetched) >= 2:
+                sets = [{(t.tx_hash, t.log_index) for t in lst} for lst in fetched]
+                if any(s != sets[0] for s in sets[1:]):
+                    log.warning(
+                        "Сеть %s, кошелёк %s: расхождение наборов транзакций между "
+                        "источниками (%s) — взято объединение",
+                        network.code,
+                        wallet.address,
+                        [len(s) for s in sets],
+                    )
+            merged = merge_sources(fetched)
+            created = await service.ingest_transfers(wallet, network, merged, latest_block)
             if created:
                 log.info(
                     "Сеть %s, кошелёк %s: новых транзакций %d",
@@ -112,6 +167,19 @@ async def poll_network(
                     wallet.address,
                     len(created),
                 )
+            # Курсор двигается, только если ответили все источники: иначе
+            # транзакции из недоступного источника выпадут из окна навсегда.
+            if len(fetched) == len(sources):
+                wallet.last_scanned_block = latest_block
+                wallet.last_scanned_at = utcnow()
+
+        reorged = await service.check_reorgs(network, sources[0])
+        if reorged:
+            log.warning(
+                "Сеть %s: реорг затронул транзакций %d (orphaned/переехали)",
+                network.code,
+                len(reorged),
+            )
         finalized = await service.advance_finality(network, latest_block)
         if finalized:
             log.info("Сеть %s: финализировано транзакций %d", network.code, len(finalized))

@@ -76,5 +76,15 @@ class TronAdapter(ChainAdapter):
             params = {}
         return transfers
 
+    async def get_transaction_block(self, tx_hash: str) -> int | None:
+        resp = await self._client.post(
+            "/wallet/gettransactioninfobyid", json={"value": tx_hash}
+        )
+        resp.raise_for_status()
+        info = resp.json()
+        if not info or "blockNumber" not in info:
+            return None
+        return int(info["blockNumber"])
+
     async def aclose(self) -> None:
         await self._client.aclose()

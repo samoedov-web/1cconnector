@@ -81,6 +81,10 @@ class Wallet(Base):
     label: Mapped[str] = mapped_column(String(256), default="")
     backfill_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Курсор синхронизации: досюда история уже прочитана. Следующий опрос
+    # начинается с (курсор − запас на реорг), а не с backfill_from заново.
+    last_scanned_block: Mapped[int | None] = mapped_column(Integer)
+    last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     network: Mapped[Network] = relationship()
 

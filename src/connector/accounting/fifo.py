@@ -71,7 +71,7 @@ class FifoMethod(CostBasisMethod):
 
         parts: list[DisposalPart] = []
         remaining = quantity
-        for lot in sorted(lots, key=lambda l: (l.acquired_at, l.id)):
+        for lot in sorted(lots, key=lambda item: (item.acquired_at, item.id)):
             if remaining <= 0:
                 break
             if lot.remaining <= 0:
