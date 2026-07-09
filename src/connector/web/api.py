@@ -1,8 +1,9 @@
 """API веб-панели администратора: кошельки, очередь ручного разбора, мониторинг.
 
-MVP-объём: управление отслеживаемыми адресами, просмотр очереди pending-матчей,
-ручная привязка с запоминанием правила, health-check. RBAC-роли из моделей
-(admin / operator / auditor) подключаются middleware-ом аутентификации панели.
+Матрица доступа (RBAC, п. 9 ТЗ):
+- кошельки (изменение)          — admin;
+- очередь разбора (просмотр)    — admin / operator / auditor;
+- разбор (привязка)             — admin / operator.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from connector.models import (
     Wallet,
 )
 from connector.pipeline import apply_payment_to_invoice
+from connector.security import CurrentUser, require_admin, require_operator, require_reader
 
 router = APIRouter(prefix="/api/v1", tags=["admin"])
 
@@ -47,7 +49,11 @@ class WalletOut(BaseModel):
 
 
 @router.post("/wallets", response_model=WalletOut)
-async def add_wallet(data: WalletIn, session: AsyncSession = Depends(get_session)) -> WalletOut:
+async def add_wallet(
+    data: WalletIn,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+) -> WalletOut:
     network = await session.scalar(select(Network).where(Network.code == data.network_code))
     if network is None:
         raise HTTPException(status_code=404, detail=f"Сеть {data.network_code} не настроена")
@@ -60,7 +66,7 @@ async def add_wallet(data: WalletIn, session: AsyncSession = Depends(get_session
     session.add(wallet)
     session.add(
         AuditLog(
-            actor="admin",  # TODO: из сессии пользователя панели
+            actor=user.username,
             action="wallet_added",
             entity="wallet",
             entity_id=data.address,
@@ -86,7 +92,10 @@ class PendingMatchOut(BaseModel):
 
 
 @router.get("/matching/pending", response_model=list[PendingMatchOut])
-async def pending_queue(session: AsyncSession = Depends(get_session)) -> list[PendingMatchOut]:
+async def pending_queue(
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_reader),
+) -> list[PendingMatchOut]:
     """Очередь ручного разбора: всё, что не сматчилось автоматически."""
     rows = (
         await session.execute(
@@ -114,12 +123,14 @@ class ResolveIn(BaseModel):
     invoice_id: int | None = None
     allocated_amount: Decimal | None = None  # None — вся сумма pending-строки
     remember_address: bool = True  # запомнить адрес как правило автоматчинга
-    actor: str = "operator"
 
 
 @router.post("/matching/{match_id}/resolve")
 async def resolve_match(
-    match_id: int, data: ResolveIn, session: AsyncSession = Depends(get_session)
+    match_id: int,
+    data: ResolveIn,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_operator),
 ) -> dict:
     """Ручная привязка из очереди разбора; система запоминает правило."""
     match = await session.get(Match, match_id)
@@ -133,7 +144,7 @@ async def resolve_match(
     if data.allocated_amount is not None:
         match.allocated_amount = data.allocated_amount
     match.state = MatchState.MANUAL
-    match.matched_by = data.actor
+    match.matched_by = user.username
 
     if data.invoice_id is not None:
         invoice = await session.get(Invoice, data.invoice_id)
@@ -163,7 +174,7 @@ async def resolve_match(
 
     session.add(
         AuditLog(
-            actor=data.actor,
+            actor=user.username,
             action="match_resolved",
             entity="match",
             entity_id=str(match_id),

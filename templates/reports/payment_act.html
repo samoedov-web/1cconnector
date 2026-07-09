@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Акт по операции с цифровой валютой</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 12pt; margin: 2.5cm 2cm; color: #000; }
+  h1 { font-size: 14pt; text-align: center; margin-bottom: 0.2em; }
+  .subtitle { text-align: center; font-size: 10pt; margin-bottom: 2em; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 1.5em; }
+  th, td { border: 1px solid #000; padding: 4px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: bold; }
+  .section { font-weight: bold; margin: 1.2em 0 0.4em; }
+  .mono { font-family: "Courier New", monospace; font-size: 10pt; word-break: break-all; }
+  .footer { margin-top: 3em; font-size: 10pt; }
+  .sign { margin-top: 2.5em; display: flex; justify-content: space-between; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+
+<h1>АКТ<br>по операции с цифровой валютой</h1>
+<p class="subtitle">для агента валютного контроля (банк / цифровой депозитарий)<br>
+сформирован {{ generated_at }}</p>
+
+<div class="section">1. Параметры операции</div>
+<table>
+  <tr><th style="width:40%">Вид операции</th>
+      <td>{{ "Поступление цифровой валюты" if payment.direction == "in" else "Выбытие цифровой валюты" }}</td></tr>
+  <tr><th>Актив</th><td>{{ payment.asset }}</td></tr>
+  <tr><th>Сумма</th><td>{{ payment.amount }} {{ payment.asset }}</td></tr>
+  <tr><th>Адрес отправителя</th><td class="mono">{{ payment.from_address }}</td></tr>
+  <tr><th>Адрес получателя</th><td class="mono">{{ payment.to_address }}</td></tr>
+  <tr><th>Дата и время блока (UTC)</th><td>{{ payment.block_time }}</td></tr>
+  <tr><th>Финальность подтверждена</th><td>{{ payment.finalized_at or "—" }} ({{ payment.confirmations }} подтверждений)</td></tr>
+</table>
+
+{% if rate %}
+<div class="section">2. Оценка в валюте контракта и рублях</div>
+<table>
+  <tr><th style="width:40%">Курс {{ payment.asset }}/{{ rate.contract_currency }}</th><td>{{ rate.asset_to_contract }}</td></tr>
+  <tr><th>Курс {{ rate.contract_currency }}/RUB</th><td>{{ rate.contract_to_rub }}</td></tr>
+  <tr><th>Сумма в рублях</th><td>{{ rate.amount_rub }} ₽</td></tr>
+  <tr><th>Источник котировок</th><td>{{ rate.source }} (на {{ rate.as_of }})</td></tr>
+</table>
+{% endif %}
+
+<div class="section">3. Идентификация платежа (валютный контроль)</div>
+<table>
+  <tr><th>Контрагент</th><th>Контракт</th><th>Учётный номер</th><th>Инвойс</th><th>Сумма</th></tr>
+  {% for a in allocations %}
+  <tr>
+    <td>{{ a.counterparty or "—" }}</td>
+    <td>{{ a.contract_number or "—" }}</td>
+    <td>{{ a.contract_registration_number or "—" }}</td>
+    <td>{{ a.invoice_number or "—" }}</td>
+    <td>{{ a.amount }} {{ payment.asset }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="section">4. Доказательная база (журнал неизменяемости)</div>
+<table>
+  <tr><th style="width:40%">Блокчейн-сеть</th><td>{{ immutability.network }}</td></tr>
+  <tr><th>Хэш транзакции</th><td class="mono">{{ immutability.tx_hash }}</td></tr>
+  <tr><th>Номер блока</th><td>{{ immutability.block_number }}</td></tr>
+  <tr><th>Источник данных</th><td>{{ immutability.source }}</td></tr>
+  <tr><th>Момент получения данных</th><td>{{ immutability.received_at }}</td></tr>
+  <tr><th>SHA-256 сырого ответа ноды</th><td class="mono">{{ immutability.raw_response_sha256 }}</td></tr>
+</table>
+
+<p class="footer">Первичные данные операции получены из публичного блокчейна в режиме
+«только чтение», сохранены без изменений и доступны для сверки по хэшу транзакции
+в любом публичном обозревателе сети {{ immutability.network }}.</p>
+
+<div class="sign">
+  <span>Руководитель / уполномоченное лицо: _____________________</span>
+  <span>М.П.</span>
+</div>
+
+</body>
+</html>
