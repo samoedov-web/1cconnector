@@ -140,7 +140,7 @@ async def test_receipt_creates_lot_document_and_pays_invoice(session, world):
     assert doc.doc_type == OnecDocType.RECEIPT
     assert doc.idempotency_key == "tron:aa:0:receipt"
     assert doc.payload["amount_rub"] == str(Decimal(1000) * USDT_RUB)
-    assert doc.payload["allocations"][0]["invoice_ref"] == world["invoice"].id
+    assert doc.payload["allocations"][0]["invoice_id"] == world["invoice"].id
 
     lot = await session.scalar(select(Lot).where(Lot.transaction_id == tx.id))
     assert lot.remaining == Decimal(1000)
@@ -231,7 +231,7 @@ async def test_unmatched_tx_waits_for_manual_review(session, world):
     docs = await pipeline.process_network(world["network"])
     [doc] = docs
     assert doc.doc_type == OnecDocType.RECEIPT
-    assert doc.payload["allocations"][0]["counterparty_ref"] == world["counterparty"].id
+    assert doc.payload["allocations"][0]["counterparty_id"] == world["counterparty"].id
 
 
 async def test_disposal_deferred_when_lots_insufficient(session, world):

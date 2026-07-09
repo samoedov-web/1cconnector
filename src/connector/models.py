@@ -151,6 +151,7 @@ class Invoice(Base):
         Enum(InvoiceStatus, native_enum=False), default=InvoiceStatus.OPEN
     )
     paid_amount: Mapped[Decimal] = mapped_column(AMOUNT, default=Decimal(0))
+    onec_ref: Mapped[str] = mapped_column(String(64), default="")
 
     contract: Mapped[Contract] = relationship()
 

@@ -43,6 +43,7 @@ from connector.config import settings
 from connector.matching.engine import InvoiceView, TxView, match_transaction
 from connector.models import (
     Contract,
+    Counterparty,
     CounterpartyAddress,
     Direction,
     DisposalLine,
@@ -139,12 +140,13 @@ class TransactionPipeline:
             return []  # ждём ручного разбора
 
         rate = await self._ensure_rate_snapshot(tx, matches)
+        allocations = await self._allocations_for_1c(matches)
 
         docs: list[OnecDocument] = []
         if tx.direction == Direction.IN:
-            docs.append(await self._process_receipt(tx, rate, matches, key))
+            docs.append(await self._process_receipt(tx, rate, allocations, key))
         else:
-            disposal = await self._process_disposal(tx, rate, matches, key)
+            disposal = await self._process_disposal(tx, rate, allocations, key)
             if disposal is None:
                 return []  # нехватка остатка — повтор в следующем цикле
             docs.append(disposal)
@@ -232,6 +234,42 @@ class TransactionPipeline:
         await self.session.flush()
         return matches
 
+    async def _allocations_for_1c(self, matches: list[Match]) -> list[dict]:
+        """Привязки для payload документа: GUID объектов 1С (onec_ref) +
+        внутренние id и имена (см. Allocation1C в accounting/documents.py).
+
+        GUID появляются после синхронизации справочников из 1С (onec/sync.py);
+        до неё поля *_ref пустые, и расширение показывает бухгалтеру имя/номер.
+        """
+        allocations: list[dict] = []
+        for m in matches:
+            counterparty = (
+                await self.session.get(Counterparty, m.counterparty_id)
+                if m.counterparty_id
+                else None
+            )
+            contract = (
+                await self.session.get(Contract, m.contract_id) if m.contract_id else None
+            )
+            invoice = (
+                await self.session.get(Invoice, m.invoice_id) if m.invoice_id else None
+            )
+            allocations.append(
+                {
+                    "amount": str(m.allocated_amount),
+                    "counterparty_ref": counterparty.onec_ref if counterparty else "",
+                    "counterparty_id": m.counterparty_id,
+                    "counterparty_name": counterparty.name if counterparty else "",
+                    "contract_ref": contract.onec_ref if contract else "",
+                    "contract_id": m.contract_id,
+                    "contract_number": contract.number if contract else "",
+                    "invoice_ref": invoice.onec_ref if invoice else "",
+                    "invoice_id": m.invoice_id,
+                    "invoice_number": invoice.number if invoice else "",
+                }
+            )
+        return allocations
+
     # --- Курсы -------------------------------------------------------------
 
     async def _contract_currency(self, matches: list[Match]) -> str:
@@ -268,7 +306,7 @@ class TransactionPipeline:
     # --- Учёт ----------------------------------------------------------------
 
     async def _process_receipt(
-        self, tx: Transaction, rate: RateSnapshot, matches: list[Match], key: str
+        self, tx: Transaction, rate: RateSnapshot, allocations: list[dict], key: str
     ) -> OnecDocument:
         existing_lot = await self.session.scalar(
             select(Lot.id).where(Lot.transaction_id == tx.id)
@@ -289,13 +327,13 @@ class TransactionPipeline:
             idempotency_key=key,
             doc_type=OnecDocType.RECEIPT,
             transaction_id=tx.id,
-            payload=build_receipt(tx, rate, matches),
+            payload=build_receipt(tx, rate, allocations),
         )
         self.session.add(doc)
         return doc
 
     async def _process_disposal(
-        self, tx: Transaction, rate: RateSnapshot, matches: list[Match], key: str
+        self, tx: Transaction, rate: RateSnapshot, allocations: list[dict], key: str
     ) -> OnecDocument | None:
         lots = (
             (
@@ -345,7 +383,7 @@ class TransactionPipeline:
             idempotency_key=key,
             doc_type=OnecDocType.DISPOSAL,
             transaction_id=tx.id,
-            payload=build_disposal(tx, rate, matches, result),
+            payload=build_disposal(tx, rate, allocations, result),
         )
         self.session.add(doc)
         return doc

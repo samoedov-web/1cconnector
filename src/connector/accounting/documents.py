@@ -16,11 +16,22 @@ from decimal import Decimal
 
 from connector.accounting.fifo import DisposalResult
 from connector.models import (
-    Match,
     OnecDocType,
     RateSnapshot,
     Transaction,
 )
+
+# Привязка платежа для 1С: *_ref — GUID объектов 1С (заполняются
+# синхронизацией справочников, onec/sync.py), *_id — внутренние id
+# коннектора (диагностика), имена/номера — для показа бухгалтеру,
+# если GUID ещё не привязан.
+#   {
+#     "amount": "...",
+#     "counterparty_ref": "<GUID|''>", "counterparty_id": 1, "counterparty_name": "...",
+#     "contract_ref": "<GUID|''>", "contract_id": 2, "contract_number": "...",
+#     "invoice_ref": "<GUID|''>", "invoice_id": 3, "invoice_number": "...",
+#   }
+Allocation1C = dict
 
 
 def idempotency_key(tx: Transaction, doc_type: OnecDocType, network_code: str) -> str:
@@ -48,7 +59,9 @@ def _base_payload(tx: Transaction, rate: RateSnapshot) -> dict:
     }
 
 
-def build_receipt(tx: Transaction, rate: RateSnapshot, matches: list[Match]) -> dict:
+def build_receipt(
+    tx: Transaction, rate: RateSnapshot, allocations: list[Allocation1C]
+) -> dict:
     """«Поступление цифровой валюты»: входящий платёж по контракту."""
     amount_rub = tx.amount * rate.asset_to_rub
     return _base_payload(tx, rate) | {
@@ -56,20 +69,15 @@ def build_receipt(tx: Transaction, rate: RateSnapshot, matches: list[Match]) -> 
         "from_address": tx.from_address,
         "to_wallet": tx.wallet.address,
         "amount_rub": str(amount_rub),
-        "allocations": [
-            {
-                "counterparty_ref": m.counterparty_id,
-                "contract_ref": m.contract_id,
-                "invoice_ref": m.invoice_id,
-                "amount": str(m.allocated_amount),
-            }
-            for m in matches
-        ],
+        "allocations": allocations,
     }
 
 
 def build_disposal(
-    tx: Transaction, rate: RateSnapshot, matches: list[Match], fifo: DisposalResult
+    tx: Transaction,
+    rate: RateSnapshot,
+    allocations: list[Allocation1C],
+    fifo: DisposalResult,
 ) -> dict:
     """«Выбытие цифровой валюты»: оплата поставщику / продажа за рубли."""
     return _base_payload(tx, rate) | {
@@ -83,15 +91,7 @@ def build_disposal(
             {"lot_id": p.lot_id, "quantity": str(p.quantity), "cost_rub": str(p.cost_rub)}
             for p in fifo.parts
         ],
-        "allocations": [
-            {
-                "counterparty_ref": m.counterparty_id,
-                "contract_ref": m.contract_id,
-                "invoice_ref": m.invoice_id,
-                "amount": str(m.allocated_amount),
-            }
-            for m in matches
-        ],
+        "allocations": allocations,
     }
 
 
