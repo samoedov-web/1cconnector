@@ -27,6 +27,9 @@ from connector.indexer.ethereum import EthereumAdapter
 from connector.indexer.service import IndexerService
 from connector.indexer.tron import TronAdapter
 from connector.models import Asset, Base, Network, Wallet
+from connector.pipeline import TransactionPipeline
+from connector.rates.service import RateService
+from connector.rates.sources import CbrRateSource, CompositeRateSource, StaticPegSource
 
 log = logging.getLogger("connector.indexer")
 
@@ -51,7 +54,20 @@ def build_adapters() -> dict[str, list[ChainAdapter]]:
     return {code: lst for code, lst in adapters.items() if lst}
 
 
-async def poll_network(network: Network, sources: list[ChainAdapter]) -> None:
+def build_rate_service() -> RateService:
+    """Основной источник: привязка стейблкоина (учётная политика) + ЦБ РФ.
+
+    Биржевой источник (реализация RateSource поверх API площадки из договора
+    клиента) подключается сюда же как asset_source или fallback.
+    """
+    return RateService(
+        primary=CompositeRateSource(asset_source=StaticPegSource(), rub_source=CbrRateSource())
+    )
+
+
+async def poll_network(
+    network: Network, sources: list[ChainAdapter], rate_service: RateService
+) -> None:
     heads = await asyncio.gather(*(s.latest_block() for s in sources), return_exceptions=True)
     heads_ok = [h for h in heads if isinstance(h, int)]
     if not heads_ok:
@@ -99,8 +115,14 @@ async def poll_network(network: Network, sources: list[ChainAdapter]) -> None:
         finalized = await service.advance_finality(network, latest_block)
         if finalized:
             log.info("Сеть %s: финализировано транзакций %d", network.code, len(finalized))
-            # TODO(core): по каждой финализированной транзакции — снимок курса,
-            # партия/списание ФИФО, матчинг, проект документа 1С (accounting/*).
+        # Связка: финальность → матчинг → снимок курса → ФИФО → проект документа.
+        # Скан каждый цикл — подхватывает и разобранные оператором транзакции.
+        pipeline = TransactionPipeline(session, rate_service)
+        documents = await pipeline.process_network(network)
+        if documents:
+            log.info(
+                "Сеть %s: подготовлено проектов документов 1С: %d", network.code, len(documents)
+            )
         await session.commit()
 
 
@@ -112,6 +134,7 @@ async def main() -> None:
     if not adapters:
         log.error("Не настроен ни один источник данных (TRON_SOURCE_*/ETH_SOURCE_*)")
         return
+    rate_service = build_rate_service()
     while True:
         async with SessionFactory() as session:
             networks = (
@@ -122,7 +145,7 @@ async def main() -> None:
             if not sources:
                 continue
             try:
-                await poll_network(network, sources)
+                await poll_network(network, sources, rate_service)
             except Exception:
                 log.exception("Сбой цикла индексации сети %s", network.code)
         await asyncio.sleep(settings.indexer_poll_interval)

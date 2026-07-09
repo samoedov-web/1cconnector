@@ -57,6 +57,26 @@ class CbrRateSource(RateSource):
         await self._client.aclose()
 
 
+class CompositeRateSource(RateSource):
+    """Маршрутизация пар между источниками: <валюта>→RUB идёт в rub_source
+    (ЦБ РФ), остальные пары (актив → валюта контракта) — в asset_source.
+
+    Позволяет собрать «основной источник» из разных API, сохранив в снимке
+    имя фактического источника каждой ноги пересчёта.
+    """
+
+    source_name = "composite"
+
+    def __init__(self, asset_source: RateSource, rub_source: RateSource) -> None:
+        self.asset_source = asset_source
+        self.rub_source = rub_source
+
+    async def get_quote(self, base: str, quote: str, as_of: datetime) -> Quote:
+        if quote.upper() == "RUB":
+            return await self.rub_source.get_quote(base, quote, as_of)
+        return await self.asset_source.get_quote(base, quote, as_of)
+
+
 class StaticPegSource(RateSource):
     """Стейблкоин к валюте привязки по фиксированному курсу (по умолчанию 1:1).
 

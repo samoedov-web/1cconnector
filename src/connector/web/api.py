@@ -19,12 +19,14 @@ from connector.db import get_session
 from connector.models import (
     AuditLog,
     CounterpartyAddress,
+    Invoice,
     Match,
     MatchState,
     Network,
     Transaction,
     Wallet,
 )
+from connector.pipeline import apply_payment_to_invoice
 
 router = APIRouter(prefix="/api/v1", tags=["admin"])
 
@@ -132,6 +134,12 @@ async def resolve_match(
         match.allocated_amount = data.allocated_amount
     match.state = MatchState.MANUAL
     match.matched_by = data.actor
+
+    if data.invoice_id is not None:
+        invoice = await session.get(Invoice, data.invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=404, detail="Инвойс не найден")
+        apply_payment_to_invoice(invoice, match.allocated_amount)
 
     if data.remember_address and tx is not None:
         counterparty_address = (

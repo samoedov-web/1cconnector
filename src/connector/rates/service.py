@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from connector.models import RateSnapshot
 from connector.rates.base import Quote, RateSource
@@ -36,7 +37,13 @@ class RateService:
     ) -> RateSnapshot:
         """Снимок курса: asset→contract_currency и contract_currency→RUB."""
         a2c, a2c_fb = await self._quote(asset_symbol, contract_currency, as_of)
-        c2r, c2r_fb = await self._quote(contract_currency, "RUB", as_of)
+        if contract_currency.upper() == "RUB":
+            c2r, c2r_fb = (
+                Quote("RUB", "RUB", Decimal(1), as_of, "identity", {}),
+                False,
+            )
+        else:
+            c2r, c2r_fb = await self._quote(contract_currency, "RUB", as_of)
         return RateSnapshot(
             transaction_id=transaction_id,
             as_of=as_of,
