@@ -15,11 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from connector.db import get_session
 from connector.models import (
     AuditLog,
     CounterpartyAddress,
+    Direction,
     Invoice,
     Match,
     MatchState,
@@ -46,6 +48,30 @@ class WalletOut(BaseModel):
     address: str
     label: str
     enabled: bool
+    last_scanned_at: datetime | None = None
+
+
+@router.get("/wallets", response_model=list[WalletOut])
+async def list_wallets(
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_reader),
+) -> list[WalletOut]:
+    rows = (
+        await session.execute(
+            select(Wallet, Network.code).join(Network, Wallet.network_id == Network.id)
+        )
+    ).all()
+    return [
+        WalletOut(
+            id=w.id,
+            network_code=code,
+            address=w.address,
+            label=w.label,
+            enabled=w.enabled,
+            last_scanned_at=w.last_scanned_at,
+        )
+        for w, code in rows
+    ]
 
 
 @router.post("/wallets", response_model=WalletOut)
@@ -87,7 +113,13 @@ class PendingMatchOut(BaseModel):
     match_id: int
     transaction_id: int
     tx_hash: str
-    amount: str
+    network: str
+    asset: str
+    direction: str
+    block_time: datetime
+    amount: str  # нераспределённая часть (allocated_amount pending-строки)
+    tx_amount: str  # полная сумма транзакции
+    counterparty_address: str  # адрес второй стороны — ключ для привязки
     counterparty_id: int | None
 
 
@@ -101,6 +133,10 @@ async def pending_queue(
         await session.execute(
             select(Match, Transaction)
             .join(Transaction, Match.transaction_id == Transaction.id)
+            .options(
+                selectinload(Transaction.network),
+                selectinload(Transaction.asset),
+            )
             .where(Match.state == MatchState.PENDING)
             .order_by(Match.id)
         )
@@ -110,7 +146,15 @@ async def pending_queue(
             match_id=m.id,
             transaction_id=t.id,
             tx_hash=t.tx_hash,
+            network=t.network.code,
+            asset=t.asset.symbol,
+            direction=t.direction.value,
+            block_time=t.block_time,
             amount=str(m.allocated_amount),
+            tx_amount=str(t.amount),
+            counterparty_address=(
+                t.from_address if t.direction == Direction.IN else t.to_address
+            ),
             counterparty_id=m.counterparty_id,
         )
         for m, t in rows

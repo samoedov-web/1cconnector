@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select, text
 
 from connector import __version__
@@ -26,6 +29,9 @@ from connector.reports.api import router as reports_router
 from connector.security import hash_password
 from connector.web.api import router as admin_router
 from connector.web.auth import router as auth_router
+from connector.web.dashboard import router as dashboard_router
+from connector.web.directory import router as directory_router
+from connector.web.transactions import router as transactions_router
 from connector.web.users import router as users_router
 
 log = logging.getLogger("connector.main")
@@ -69,6 +75,9 @@ app.include_router(onec_router)
 app.include_router(onec_sync_router)
 app.include_router(admin_router)
 app.include_router(users_router)
+app.include_router(transactions_router)
+app.include_router(directory_router)
+app.include_router(dashboard_router)
 app.include_router(reports_router)
 
 
@@ -78,3 +87,16 @@ async def health() -> dict:
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
     return {"status": "ok", "version": __version__}
+
+
+# --- Веб-панель (React, web/dist) -------------------------------------------
+# Catch-all регистрируется последним: /api, /health и /docs матчатся раньше.
+_panel_dist = Path(settings.panel_dist_dir)
+if _panel_dist.is_dir():
+    app.mount("/assets", StaticFiles(directory=_panel_dist / "assets"), name="panel-assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str) -> FileResponse:
+        if path.startswith(("api/", "assets/")):
+            raise HTTPException(status_code=404)
+        return FileResponse(_panel_dist / "index.html")

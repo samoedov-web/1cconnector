@@ -39,5 +39,8 @@ class Settings(BaseSettings):
     # Каталог обновляемых шаблонов отчётности — обновляется отдельно от ядра.
     report_templates_dir: str = "templates/reports"
 
+    # Сборка веб-панели (React); если каталога нет — отдаётся только API.
+    panel_dist_dir: str = "web/dist"
+
 
 settings = Settings()
