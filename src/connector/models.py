@@ -360,6 +360,23 @@ class User(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class Alert(Base):
+    """Алерт мониторинга (п. 10 ТЗ): отставание, расхождение источников, сбои.
+
+    Хранится всегда (виден в панели); при настроенном webhook дополнительно
+    отправляется наружу (sent = доставлен).
+    """
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    severity: Mapped[str] = mapped_column(String(16))  # warning | error
+    title: Mapped[str] = mapped_column(String(256))
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    sent: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class AuditLog(Base):
     """Append-only журнал действий: кто привязал транзакцию, кто изменил правило."""
 

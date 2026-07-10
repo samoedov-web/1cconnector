@@ -152,6 +152,27 @@ class IndexerService:
         await self.session.flush()
         return created
 
+    async def enrich_fees(self, created: list[Transaction], adapter) -> int:
+        """Догрузить комиссии для новых исходящих транзакций (платит отправитель).
+
+        Сбой по одной транзакции не мешает остальным: комиссия останется 0,
+        а конвейер не создаст fee-документ — догрузится при доработке вручную.
+        """
+        enriched = 0
+        for tx in created:
+            if tx.direction != Direction.OUT:
+                continue
+            try:
+                fee_amount, fee_asset = await adapter.get_transaction_fee(tx.tx_hash)
+            except Exception:  # noqa: BLE001 — сеть/провайдер, не логика
+                continue
+            if fee_amount > 0:
+                tx.fee_amount = fee_amount
+                tx.fee_asset = fee_asset
+                enriched += 1
+        await self.session.flush()
+        return enriched
+
     async def check_reorgs(self, network: Network, adapter) -> list[Transaction]:
         """Перепроверить нефинальные транзакции в канонической цепочке.
 

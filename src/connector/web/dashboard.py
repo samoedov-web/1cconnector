@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from connector.db import get_session
 from connector.models import (
+    Alert,
     Match,
     MatchState,
     Network,
@@ -68,9 +69,28 @@ async def dashboard(
             }
         )
 
+    alerts = (
+        (
+            await session.execute(
+                select(Alert).order_by(Alert.at.desc(), Alert.id.desc()).limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {
         "networks": network_rows,
         "transactions": {k.value: v for k, v in tx_by_status.items()},
         "pending_matches": pending_matches or 0,
         "onec_documents": {k.value: v for k, v in docs_by_status.items()},
+        "alerts": [
+            {
+                "at": a.at.isoformat() if a.at else None,
+                "severity": a.severity,
+                "title": a.title,
+                "details": a.details,
+                "sent": a.sent,
+            }
+            for a in alerts
+        ],
     }

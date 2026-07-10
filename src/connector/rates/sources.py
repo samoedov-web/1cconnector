@@ -57,6 +57,74 @@ class CbrRateSource(RateSource):
         await self._client.aclose()
 
 
+class FallbackRateSource(RateSource):
+    """Цепочка источников: котировка берётся у первого, кто её знает.
+
+    LookupError (источник не знает пару) — пробуем следующий; сетевые ошибки
+    тоже приводят к переходу дальше, но фиксируются в самой котировке нет —
+    их видно в логах вызывающего кода.
+    """
+
+    source_name = "fallback-chain"
+
+    def __init__(self, *sources: RateSource) -> None:
+        self._sources = sources
+
+    async def get_quote(self, base: str, quote: str, as_of: datetime) -> Quote:
+        last_error: Exception | None = None
+        for source in self._sources:
+            try:
+                return await source.get_quote(base, quote, as_of)
+            except Exception as exc:  # noqa: BLE001 — пробуем следующий источник
+                last_error = exc
+        raise last_error or LookupError(f"Нет источника для {base}/{quote}")
+
+
+COINGECKO_URL = "https://api.coingecko.com/api/v3/coins/{id}/history"
+COINGECKO_IDS = {"TRX": "tron", "ETH": "ethereum", "USDT": "tether", "USDC": "usd-coin"}
+
+
+class CoinGeckoSource(RateSource):
+    """Крипто → фиат по историческим данным CoinGecko (публичный API).
+
+    Используется для оценки комиссий сети (TRX/ETH) и как биржевой источник,
+    если он зафиксирован в учётной политике клиента. Сырой ответ сохраняется
+    в снимке курса — выбор источника доказуем.
+    """
+
+    source_name = "coingecko"
+
+    def __init__(self, url_template: str = COINGECKO_URL) -> None:
+        self._url_template = url_template
+        self._client = httpx.AsyncClient(timeout=30)
+
+    async def get_quote(self, base: str, quote: str, as_of: datetime) -> Quote:
+        coin_id = COINGECKO_IDS.get(base.upper())
+        if coin_id is None:
+            raise LookupError(f"CoinGecko: неизвестный актив {base}")
+        resp = await self._client.get(
+            self._url_template.format(id=coin_id),
+            params={"date": as_of.strftime("%d-%m-%Y"), "localization": "false"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        prices = data.get("market_data", {}).get("current_price", {})
+        rate = prices.get(quote.lower())
+        if rate is None:
+            raise LookupError(f"CoinGecko: нет котировки {base}/{quote} на {as_of:%d.%m.%Y}")
+        return Quote(
+            base=base.upper(),
+            quote=quote.upper(),
+            rate=Decimal(str(rate)),
+            as_of=as_of,
+            source=self.source_name,
+            raw={"date": as_of.strftime("%d-%m-%Y"), "price": str(rate)},
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
 class CompositeRateSource(RateSource):
     """Маршрутизация пар между источниками: <валюта>→RUB идёт в rub_source
     (ЦБ РФ), остальные пары (актив → валюта контракта) — в asset_source.

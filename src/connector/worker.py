@@ -27,10 +27,18 @@ from connector.indexer.base import ChainAdapter
 from connector.indexer.ethereum import EthereumAdapter
 from connector.indexer.service import IndexerService, merge_sources
 from connector.indexer.tron import TronAdapter
+from connector.alerts import send_alert
 from connector.models import Asset, Base, Network, Wallet, utcnow
 from connector.pipeline import TransactionPipeline
 from connector.rates.service import RateService
-from connector.rates.sources import CbrRateSource, CompositeRateSource, StaticPegSource
+from connector.rates.sources import (
+    CbrRateSource,
+    CoinGeckoSource,
+    CompositeRateSource,
+    FallbackRateSource,
+    StaticPegSource,
+)
+from connector.seed import seed_defaults
 
 log = logging.getLogger("connector.indexer")
 
@@ -80,13 +88,17 @@ def scan_window(
 
 
 def build_rate_service() -> RateService:
-    """Основной источник: привязка стейблкоина (учётная политика) + ЦБ РФ.
+    """Курсы: стейблкоины — привязка (учётная политика), нативные монеты
+    (комиссии TRX/ETH) — CoinGecko, нога в рубли — ЦБ РФ.
 
-    Биржевой источник (реализация RateSource поверх API площадки из договора
-    клиента) подключается сюда же как asset_source или fallback.
+    Биржевой источник площадки из договора клиента подключается первым
+    звеном FallbackRateSource при внедрении.
     """
     return RateService(
-        primary=CompositeRateSource(asset_source=StaticPegSource(), rub_source=CbrRateSource())
+        primary=CompositeRateSource(
+            asset_source=FallbackRateSource(StaticPegSource(), CoinGeckoSource()),
+            rub_source=CbrRateSource(),
+        )
     )
 
 
@@ -97,6 +109,12 @@ async def poll_network(
     heads_ok = [h for h in heads if isinstance(h, int)]
     if not heads_ok:
         log.error("Сеть %s: все источники недоступны", network.code)
+        async with SessionFactory() as session:
+            await send_alert(
+                session, "error", f"Сеть {network.code}: все источники данных недоступны",
+                {"sources": [s.source_name for s in sources]},
+            )
+            await session.commit()
         return
     if settings.cross_check_sources and len(heads_ok) >= 2 and max(heads_ok) - min(heads_ok) > 5:
         log.warning(
@@ -104,6 +122,13 @@ async def poll_network(
             network.code,
             heads_ok,
         )
+        async with SessionFactory() as session:
+            await send_alert(
+                session, "warning",
+                f"Сеть {network.code}: расхождение источников по высоте блока",
+                {"heads": heads_ok},
+            )
+            await session.commit()
         return
     latest_block = min(heads_ok)  # консервативно: по отстающему источнику
 
@@ -158,6 +183,11 @@ async def poll_network(
                         wallet.address,
                         [len(s) for s in sets],
                     )
+                    await send_alert(
+                        session, "warning",
+                        f"Сеть {network.code}: источники отдали разные наборы транзакций",
+                        {"wallet": wallet.address, "counts": [len(s) for s in sets]},
+                    )
             merged = merge_sources(fetched)
             created = await service.ingest_transfers(wallet, network, merged, latest_block)
             if created:
@@ -167,6 +197,8 @@ async def poll_network(
                     wallet.address,
                     len(created),
                 )
+                # Комиссии исходящих — отдельная статья расходов (п. 6 ТЗ).
+                await service.enrich_fees(created, sources[0])
             # Курсор двигается, только если ответили все источники: иначе
             # транзакции из недоступного источника выпадут из окна навсегда.
             if len(fetched) == len(sources):
@@ -179,6 +211,11 @@ async def poll_network(
                 "Сеть %s: реорг затронул транзакций %d (orphaned/переехали)",
                 network.code,
                 len(reorged),
+            )
+            await send_alert(
+                session, "warning",
+                f"Сеть {network.code}: реорг затронул {len(reorged)} транзакций",
+                {"hashes": [t.tx_hash for t in reorged][:20]},
             )
         finalized = await service.advance_finality(network, latest_block)
         if finalized:
@@ -198,6 +235,10 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    if settings.seed_defaults:
+        async with SessionFactory() as session:
+            await seed_defaults(session)
+            await session.commit()
     adapters = build_adapters()
     if not adapters:
         log.error("Не настроен ни один источник данных (TRON_SOURCE_*/ETH_SOURCE_*)")

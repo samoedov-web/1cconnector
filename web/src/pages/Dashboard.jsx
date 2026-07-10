@@ -64,6 +64,31 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {data.alerts?.length > 0 && (
+        <>
+          <h2>Алерты</h2>
+          <table>
+            <thead>
+              <tr><th>Время</th><th>Уровень</th><th>Событие</th><th>Webhook</th></tr>
+            </thead>
+            <tbody>
+              {data.alerts.map((a, i) => (
+                <tr key={i}>
+                  <td>{a.at ? new Date(a.at).toLocaleString('ru-RU') : '—'}</td>
+                  <td>
+                    <span className={`badge ${a.severity === 'error' ? 'err' : 'warn'}`}>
+                      {a.severity}
+                    </span>
+                  </td>
+                  <td>{a.title}</td>
+                  <td>{a.sent ? 'доставлен' : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
       <h2>Сети</h2>
       <table>
         <thead>

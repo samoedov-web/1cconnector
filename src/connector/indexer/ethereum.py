@@ -157,5 +157,13 @@ class EthereumAdapter(ChainAdapter):
             return None
         return int(receipt["blockNumber"], 16)
 
+    async def get_transaction_fee(self, tx_hash: str) -> tuple[Decimal, str]:
+        receipt = await self._rpc("eth_getTransactionReceipt", [tx_hash])
+        if not receipt:
+            return Decimal(0), "ETH"
+        gas_used = int(receipt["gasUsed"], 16)
+        price = int(receipt.get("effectiveGasPrice", "0x0"), 16)
+        return Decimal(gas_used * price) / Decimal(10**18), "ETH"
+
     async def aclose(self) -> None:
         await self._client.aclose()

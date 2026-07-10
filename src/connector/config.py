@@ -42,5 +42,11 @@ class Settings(BaseSettings):
     # Сборка веб-панели (React); если каталога нет — отдаётся только API.
     panel_dist_dir: str = "web/dist"
 
+    # Начальное заполнение справочников сетей/активов при пустой базе.
+    seed_defaults: bool = True
+
+    # Webhook алертов мониторинга (POST JSON); пусто — только журнал в БД.
+    alert_webhook_url: str = ""
+
 
 settings = Settings()

@@ -398,11 +398,13 @@ class TransactionPipeline:
         if exists is not None:
             return None
         try:
+            # purpose="fee": снимок комиссии не должен подменять снимок актива
+            # при повторной обработке (_ensure_rate_snapshot ищет "finality").
             fee_rate = await self.rates.snapshot(
                 asset_symbol=tx.fee_asset,
                 contract_currency="USD",
                 as_of=tx.finalized_at or tx.block_time,
-                purpose="finality",
+                purpose="fee",
                 transaction_id=tx.id,
             )
         except LookupError:

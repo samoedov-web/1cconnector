@@ -27,6 +27,7 @@ from connector.onec.api import router as onec_router
 from connector.onec.sync import router as onec_sync_router
 from connector.reports.api import router as reports_router
 from connector.security import hash_password
+from connector.seed import seed_defaults
 from connector.web.api import router as admin_router
 from connector.web.auth import router as auth_router
 from connector.web.dashboard import router as dashboard_router
@@ -61,6 +62,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await bootstrap_admin()
+    if settings.seed_defaults:
+        async with SessionFactory() as session:
+            await seed_defaults(session)
+            await session.commit()
     yield
     await engine.dispose()
 

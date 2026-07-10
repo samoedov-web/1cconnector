@@ -77,14 +77,24 @@ class TronAdapter(ChainAdapter):
         return transfers
 
     async def get_transaction_block(self, tx_hash: str) -> int | None:
+        info = await self._transaction_info(tx_hash)
+        if not info or "blockNumber" not in info:
+            return None
+        return int(info["blockNumber"])
+
+    async def get_transaction_fee(self, tx_hash: str) -> tuple[Decimal, str]:
+        info = await self._transaction_info(tx_hash)
+        # fee — суммарная комиссия в sun (1 TRX = 1e6 sun): сожжённые
+        # bandwidth/energy; при полном покрытии ресурсами аккаунта fee = 0.
+        fee_sun = int(info.get("fee", 0)) if info else 0
+        return Decimal(fee_sun) / Decimal(10**6), "TRX"
+
+    async def _transaction_info(self, tx_hash: str) -> dict:
         resp = await self._client.post(
             "/wallet/gettransactioninfobyid", json={"value": tx_hash}
         )
         resp.raise_for_status()
-        info = resp.json()
-        if not info or "blockNumber" not in info:
-            return None
-        return int(info["blockNumber"])
+        return resp.json()
 
     async def aclose(self) -> None:
         await self._client.aclose()
