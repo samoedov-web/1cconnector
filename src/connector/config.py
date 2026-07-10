@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -49,6 +51,15 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
 
     # --- Депозитарная сверка (specs/depository-adapter.md) ---
+    # Режим работы custody-слоя (п. 4.7 спеки, «та самая галочка»):
+    #   off    — текущее поведение продукта, custody-слой не активен;
+    #   shadow — загрузка выписок, сверка, отчёты, вкладка «Сверка»;
+    #            источник истины для учёта — блокчейн, ноль влияния
+    #            на проводки;
+    #   active — заглушка до вступления требований в силу (явная ошибка
+    #            + docs/adr/ADR-001-custody-first.md).
+    # Неизвестное значение — ошибка старта (валидация настроек).
+    custody_mode: Literal["off", "shadow", "active"] = "off"
     # Адаптер-источник выписок (id в реестре custody-источников) и его
     # конфигурация; до появления реальных API — мок с фикстурами.
     custody_source_id: str = "mock-depo"
