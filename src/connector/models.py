@@ -411,6 +411,64 @@ class CustodyEntry(Base):
     statement: Mapped[CustodyStatement] = relationship(back_populates="entries")
 
 
+class CustodyAssetMapping(Base):
+    """Маппинг тикера выписки на актив системы (сценарий 6.9 спеки)."""
+
+    __tablename__ = "custody_asset_mapping"
+    __table_args__ = (UniqueConstraint("source_id", "custody_ticker"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64))
+    custody_ticker: Mapped[str] = mapped_column(String(64))  # как в выписке
+    asset_symbol: Mapped[str] = mapped_column(String(32))  # канонический тикер
+    network: Mapped[str | None] = mapped_column(String(32))
+
+
+class ReconciliationRun(Base):
+    """Запуск сверки блокчейн ↔ депозитарий за период.
+
+    Идемпотентность: повторный запуск с тем же (source_id, период,
+    config_hash) возвращает существующий незастаревший результат.
+    stale=True — после запуска случился реорг, затронувший вошедшие
+    в сверку транзакции (сценарий 6.10): результат устарел, нужен
+    повторный запуск.
+    """
+
+    __tablename__ = "reconciliation_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64))
+    period_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_to: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    config: Mapped[dict] = mapped_column(JSON)  # снимок конфигурации движка
+    config_hash: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    stale: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    results: Mapped[list["ReconciliationResult"]] = relationship(back_populates="run")
+
+
+class ReconciliationResult(Base):
+    """Строка результата сверки: связка транзакций и строк выписки.
+
+    ledger_tx_ids / custody_entry_ids — списки id (агрегатный матч связывает
+    N ↔ 1); detail — аудит решения движка: какое правило сработало и почему
+    (дельты, окна, кандидаты).
+    """
+
+    __tablename__ = "reconciliation_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("reconciliation_runs.id"))
+    status: Mapped[str] = mapped_column(String(32))  # ReconStatus
+    rule: Mapped[str] = mapped_column(String(32))  # hash | tuple | aggregate | none
+    ledger_tx_ids: Mapped[list] = mapped_column(JSON, default=list)
+    custody_entry_ids: Mapped[list] = mapped_column(JSON, default=list)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    run: Mapped[ReconciliationRun] = relationship(back_populates="results")
+
+
 # --- Обмен с 1С ------------------------------------------------------------
 
 
