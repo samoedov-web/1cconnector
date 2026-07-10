@@ -318,6 +318,32 @@ class DisposalLine(Base):
     cost_rub: Mapped[Decimal] = mapped_column(AMOUNT)
 
 
+class Revaluation(Base):
+    """Переоценка остатка ЦВ на отчётную дату (v1, п. 6 ТЗ).
+
+    Себестоимость партий ФИФО не переписывается (историческая оценка нужна
+    налоговому учёту при выбытии); переоценка — отдельный реестр и документ
+    для бухучёта: 1С сторнирует предыдущую разницу и начисляет новую
+    (в payload передаются и полная разница, и дельта к предыдущей).
+    """
+
+    __tablename__ = "revaluations"
+    __table_args__ = (UniqueConstraint("asset_id", "as_of"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    quantity: Mapped[Decimal] = mapped_column(AMOUNT)  # остаток по партиям
+    book_cost_rub: Mapped[Decimal] = mapped_column(AMOUNT)  # себестоимость ФИФО
+    market_rub: Mapped[Decimal] = mapped_column(AMOUNT)  # оценка по курсу на дату
+    difference_rub: Mapped[Decimal] = mapped_column(AMOUNT)  # market − book
+    delta_rub: Mapped[Decimal] = mapped_column(AMOUNT)  # к предыдущей переоценке
+    rate_snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("rate_snapshots.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    asset: Mapped[Asset] = relationship()
+
+
 # --- Обмен с 1С ------------------------------------------------------------
 
 

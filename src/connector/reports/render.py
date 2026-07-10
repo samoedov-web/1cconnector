@@ -94,6 +94,57 @@ def payment_act_xlsx(data: dict) -> bytes:
     return _workbook_bytes(wb)
 
 
+KIND_RU = {"receipt": "поступление", "disposal": "выбытие", "fee": "комиссия сети"}
+
+
+def tax_register_xlsx(data: dict) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Налоговый регистр"
+    ws.append(["Налоговый регистр операций с цифровой валютой"])
+    ws.append([f"Период: {data['period']['from']} — {data['period']['to']}"])
+    ws.append([])
+    ws.append(["Дата (UTC)", "Операция", "Актив", "Количество",
+               "Доход, ₽", "Расход, ₽", "Результат, ₽", "Хэш транзакции"])
+    for row in data["rows"]:
+        ws.append([
+            row["date"], KIND_RU.get(row["kind"], row["kind"]), row["asset"],
+            row["quantity"], row["income_rub"], row["cost_rub"], row["result_rub"],
+            row["tx_hash"],
+        ])
+    ws.append([])
+    ws.append(["Доходы, ₽", data["totals"]["income_rub"]])
+    ws.append(["Расходы, ₽", data["totals"]["expense_rub"]])
+    ws.append(["Налоговая база, ₽", data["totals"]["result_rub"]])
+    _autofit(ws)
+    return _workbook_bytes(wb)
+
+
+def reconciliation_xlsx(data: dict) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Акт сверки"
+    ws.append([f"Акт сверки / Reconciliation: {data['counterparty']['name']}"])
+    ws.append([f"Период / Period: {data['period']['from']} — {data['period']['to']}"])
+    ws.append([])
+    ws.append(["Начислено / Invoiced"])
+    ws.append(["Дата", "Инвойс", "Контракт", "Сумма", "Валюта"])
+    for i in data["invoices"]:
+        ws.append([i["date"], i["number"], i["contract_number"], i["amount"], i["currency"]])
+    ws.append([])
+    ws.append(["Оплачено / Paid"])
+    ws.append(["Дата", "Актив", "Сумма", "В валюте контракта", "Контракт", "Хэш"])
+    for p in data["payments"]:
+        ws.append([p["date"], p["asset"], p["amount"],
+                   p["contract_currency_amount"], p["contract_number"], p["tx_hash"]])
+    ws.append([])
+    ws.append(["Начислено / Invoiced", data["totals"]["invoiced"], data["totals"]["currency"]])
+    ws.append(["Оплачено / Paid", data["totals"]["paid"], data["totals"]["currency"]])
+    ws.append(["Сальдо / Balance", data["totals"]["balance"], data["totals"]["currency"]])
+    _autofit(ws)
+    return _workbook_bytes(wb)
+
+
 def journal_xlsx(data: dict) -> bytes:
     wb = Workbook()
     ws = wb.active
