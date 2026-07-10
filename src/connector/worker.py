@@ -24,9 +24,10 @@ from sqlalchemy import select
 from connector.config import settings
 from connector.db import SessionFactory, engine
 from connector.indexer.base import ChainAdapter
-from connector.indexer.ethereum import EthereumAdapter
+# Импорт модулей адаптеров регистрирует их классы в реестре источников.
+import connector.indexer.ethereum  # noqa: F401
 from connector.indexer.service import IndexerService, merge_sources
-from connector.indexer.tron import TronAdapter
+import connector.indexer.tron  # noqa: F401
 from connector import license as license_module
 from connector.alerts import send_alert
 from connector.models import Asset, Base, Network, Wallet, utcnow
@@ -40,28 +41,35 @@ from connector.rates.sources import (
     StaticPegSource,
 )
 from connector.seed import seed_defaults
+from connector.sources.registry import create_chain_source
 
 log = logging.getLogger("connector.indexer")
 
 
 def build_adapters() -> dict[str, list[ChainAdapter]]:
-    """Собрать источники данных из окружения (минимум два на сеть — п. 3 ТЗ)."""
-    adapters: dict[str, list[ChainAdapter]] = {"tron": [], "ethereum": []}
-    for i, prefix in enumerate(("TRON_SOURCE_1", "TRON_SOURCE_2"), start=1):
-        url = os.environ.get(f"{prefix}_URL")
-        if url:
-            adapters["tron"].append(
-                TronAdapter(
+    """Собрать источники данных из окружения (минимум два на сеть — п. 3 ТЗ).
+
+    Классы адаптеров берутся из реестра источников (фаза 1 depository-спеки);
+    схема переменных окружения и имена источников не изменены.
+    """
+    env_prefixes = {"tron": ("TRON_SOURCE_1", "TRON_SOURCE_2"),
+                    "ethereum": ("ETH_SOURCE_1", "ETH_SOURCE_2")}
+    short = {"tron": "tron", "ethereum": "eth"}
+    adapters: dict[str, list[ChainAdapter]] = {}
+    for code, prefixes in env_prefixes.items():
+        for i, prefix in enumerate(prefixes, start=1):
+            url = os.environ.get(f"{prefix}_URL")
+            if not url:
+                continue
+            adapters.setdefault(code, []).append(
+                create_chain_source(
+                    code,
                     url,
                     api_key=os.environ.get(f"{prefix}_API_KEY", ""),
-                    source_name=f"tron-{i}",
+                    source_name=f"{short[code]}-{i}",
                 )
             )
-    for i, prefix in enumerate(("ETH_SOURCE_1", "ETH_SOURCE_2"), start=1):
-        url = os.environ.get(f"{prefix}_URL")
-        if url:
-            adapters["ethereum"].append(EthereumAdapter(url, source_name=f"eth-{i}"))
-    return {code: lst for code, lst in adapters.items() if lst}
+    return adapters
 
 
 def scan_window(

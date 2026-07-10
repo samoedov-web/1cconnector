@@ -13,6 +13,7 @@ from decimal import Decimal
 import httpx
 
 from connector.indexer.base import ChainAdapter, RawTransfer
+from connector.sources.registry import register_chain_source
 
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
@@ -42,8 +43,16 @@ def _topic_addr(topic: str) -> str:
     return "0x" + topic[-40:]
 
 
+@register_chain_source("ethereum")
 class EthereumAdapter(ChainAdapter):
     network_code = "ethereum"
+
+    @classmethod
+    def from_config(
+        cls, url: str, api_key: str = "", source_name: str = ""
+    ) -> "EthereumAdapter":
+        # api_key не используется: ключ RPC-провайдера входит в сам URL.
+        return cls(url, source_name=source_name or "eth-rpc")
 
     def __init__(
         self,

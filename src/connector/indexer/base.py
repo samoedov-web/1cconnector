@@ -1,15 +1,22 @@
-"""Плагинный интерфейс ChainAdapter (п. 3 ТЗ).
+"""Плагинный интерфейс ChainAdapter (п. 3 ТЗ) — семейство chain.
 
 Новая сеть (BNB Chain, Polygon, TON) добавляется реализацией этого интерфейса
 без изменения ядра. Адаптер только читает публичные данные — никаких ключей.
+
+С фазы 1 depository-спеки ChainAdapter — потомок DataSource
+(connector.sources.base): к контракту добавились meta()/health()/from_config,
+существующие методы и поведение не изменены.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import ClassVar
+
+from connector.sources.base import DataSource, HealthStatus
 
 
 @dataclass(frozen=True)
@@ -30,11 +37,28 @@ class RawTransfer:
     source: str = ""  # имя источника данных
 
 
-class ChainAdapter(ABC):
+class ChainAdapter(DataSource):
     """Read-only доступ к одной сети через один источник данных."""
 
+    family: ClassVar[str] = "chain"
     network_code: str
     source_name: str
+
+    @classmethod
+    @abstractmethod
+    def from_config(
+        cls, url: str, api_key: str = "", source_name: str = ""
+    ) -> "ChainAdapter":
+        """Единообразная фабрика для реестра источников (worker её вызывает
+        вместо конкретных конструкторов)."""
+
+    async def health(self) -> HealthStatus:
+        """Доступность сети: пробуем получить высоту последнего блока."""
+        try:
+            block = await self.latest_block()
+        except Exception as exc:  # noqa: BLE001 — health не бросает
+            return HealthStatus("down", f"{type(exc).__name__}: {exc}")
+        return HealthStatus("ok", f"height={block}")
 
     @abstractmethod
     async def latest_block(self) -> int:

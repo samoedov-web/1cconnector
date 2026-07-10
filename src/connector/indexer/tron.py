@@ -13,10 +13,18 @@ from decimal import Decimal
 import httpx
 
 from connector.indexer.base import ChainAdapter, RawTransfer
+from connector.sources.registry import register_chain_source
 
 
+@register_chain_source("tron")
 class TronAdapter(ChainAdapter):
     network_code = "tron"
+
+    @classmethod
+    def from_config(
+        cls, url: str, api_key: str = "", source_name: str = ""
+    ) -> "TronAdapter":
+        return cls(url, api_key=api_key, source_name=source_name or "trongrid")
 
     def __init__(self, base_url: str, api_key: str = "", source_name: str = "trongrid") -> None:
         self.base_url = base_url.rstrip("/")
