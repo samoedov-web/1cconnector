@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Акт сверки: блокчейн ↔ депозитарий</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 11pt; margin: 2cm 1.5cm; color: #000; }
+  h1 { font-size: 14pt; text-align: center; margin-bottom: 0.2em; }
+  .subtitle { text-align: center; font-size: 10pt; margin-bottom: 1.2em; }
+  .stale { text-align: center; color: #b00; font-weight: bold; margin-bottom: 1em; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 1.2em; }
+  th, td { border: 1px solid #000; padding: 3px 5px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  .mono { font-family: "Courier New", monospace; font-size: 8pt; word-break: break-all; }
+  .section { font-weight: bold; margin: 1em 0 0.4em; }
+  tr.diff td { background: #fdf3f3; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+
+<h1>АКТ СВЕРКИ<br>записи блокчейна ↔ выписка депозитария</h1>
+<p class="subtitle">
+  Источник выписки: {{ run.source_id }} ·
+  Период: {{ run.period_from }} — {{ run.period_to }}<br>
+  Запуск сверки № {{ run.id }} от {{ run.started_at }} · сформирован {{ generated_at }}<br>
+  Параметры: допуск {{ run.config.tolerance_abs }} (абс.) / {{ run.config.tolerance_rel }} (отн.),
+  окно {{ run.config.date_window_hours }} ч,
+  агрегаты: {{ "авто" if run.config.accept_aggregates else "ручной разбор" }}
+</p>
+{% if run.stale %}
+<p class="stale">⚠ РЕЗУЛЬТАТ УСТАРЕЛ: после сверки произошла реорганизация цепочки —
+требуется повторный запуск</p>
+{% endif %}
+
+<div class="section">Сводка</div>
+<table>
+  <tr><th>Статус</th><th>Строк</th><th>Сумма (по модулю)</th></tr>
+  {% for item in summary %}
+  <tr><td>{{ item.status_ru }}</td><td>{{ item.count }}</td><td>{{ item.amount }}</td></tr>
+  {% endfor %}
+</table>
+
+<div class="section">Детализация ({{ rows | length }} строк, расхождений: {{ discrepancies }})</div>
+<table>
+  <tr>
+    <th>№</th><th>Статус</th><th>Правило</th>
+    <th>Блокчейн (хэш · сумма · время)</th>
+    <th>Выписка (строка · сумма · время)</th>
+    <th>Пояснение движка</th>
+  </tr>
+  {% for row in rows %}
+  <tr {% if row.status not in ("matched", "matched_aggregate", "manual") %}class="diff"{% endif %}>
+    <td>{{ loop.index }}</td>
+    <td>{{ row.status_ru }}</td>
+    <td>{{ row.rule }}</td>
+    <td>
+      {% for item in row.chain %}
+      <div><span class="mono">{{ item.tx_hash }}</span> · {{ item.amount }} {{ item.asset }} · {{ item.at }}</div>
+      {% else %}—{% endfor %}
+    </td>
+    <td>
+      {% for item in row.custody %}
+      <div>№{{ item.entry_id }} · {{ item.amount }} {{ item.asset }} · {{ item.at }}
+        {% if item.external_tx_hash %}<span class="mono">{{ item.external_tx_hash }}</span>{% endif %}</div>
+      {% else %}—{% endfor %}
+    </td>
+    <td>{{ row.detail.reason or row.detail.delta and ("дельта " ~ row.detail.delta) or "" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<p style="font-size:9pt">Записи блокчейна получены в режиме «только чтение» и хранятся
+неизменяемо (сырые ответы нод + SHA-256); выписка депозитария сохранена как получена
+(журнал неизменяемости). Каждая строка доступна для независимой сверки по хэшу транзакции.</p>
+
+</body>
+</html>

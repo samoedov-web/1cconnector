@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # Webhook алертов мониторинга (POST JSON); пусто — только журнал в БД.
     alert_webhook_url: str = ""
 
+    # --- Депозитарная сверка (specs/depository-adapter.md) ---
+    # Адаптер-источник выписок (id в реестре custody-источников) и его
+    # конфигурация; до появления реальных API — мок с фикстурами.
+    custody_source_id: str = "mock-depo"
+    custody_fixtures_dir: str = "fixtures/custody"
+
     # --- Лицензирование (п. 10 ТЗ) ---
     # Файл лицензии (выпускается scripts/license_tool.py вендора);
     # отсутствует — деморежим (1 юрлицо, 1 кошелёк, без обновлений форм).

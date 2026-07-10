@@ -94,6 +94,28 @@ async def reconciliation_act(
     )
 
 
+@router.get("/custody-reconciliation/{run_id}")
+async def custody_reconciliation(
+    run_id: int,
+    format: ReportFormat = Query(default=ReportFormat.HTML),
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_reader),
+):
+    """Акт сверки блокчейн ↔ депозитарий (depository-спека, п. 4.6)."""
+    from connector.custody.report import (
+        reconciliation_report_data as custody_data,
+        reconciliation_xlsx as custody_xlsx,
+    )
+
+    data = await custody_data(session, run_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Запуск сверки не найден")
+    return _respond(
+        data, format, "custody_reconciliation.html", custody_xlsx,
+        f"custody-reconciliation-{run_id}",
+    )
+
+
 @router.get("/journal")
 async def operations_journal(
     wallet_id: int,
