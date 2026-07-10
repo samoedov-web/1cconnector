@@ -3,15 +3,32 @@ import { api, getAuth, openReport } from '../api'
 
 export default function Wallets() {
   const [wallets, setWallets] = useState(null)
-  const [form, setForm] = useState({ network_code: 'tron', address: '', label: '', backfill_from: '' })
+  const [orgs, setOrgs] = useState([])
+  const [form, setForm] = useState({
+    network_code: 'tron', address: '', label: '', backfill_from: '', organization_id: '',
+  })
+  const [orgName, setOrgName] = useState('')
   const [journal, setJournal] = useState({ wallet_id: '', date_from: '', date_to: '' })
   const [error, setError] = useState(null)
   const isAdmin = getAuth()?.role === 'admin'
 
   const load = useCallback(() => {
     api('/api/v1/wallets').then(setWallets).catch((e) => setError(e.message))
+    api('/api/v1/organizations').then(setOrgs).catch(() => {})
   }, [])
   useEffect(load, [load])
+
+  const addOrg = async (e) => {
+    e.preventDefault()
+    setError(null)
+    try {
+      await api('/api/v1/organizations', { method: 'POST', body: { name: orgName } })
+      setOrgName('')
+      load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   const add = async (e) => {
     e.preventDefault()
@@ -24,6 +41,7 @@ export default function Wallets() {
           address: form.address,
           label: form.label,
           backfill_from: form.backfill_from ? new Date(form.backfill_from).toISOString() : null,
+          organization_id: form.organization_id ? Number(form.organization_id) : null,
         },
       })
       setForm({ ...form, address: '', label: '', backfill_from: '' })
@@ -92,6 +110,18 @@ export default function Wallets() {
               <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
             </label>
             <label>
+              Юр. лицо
+              <select
+                value={form.organization_id}
+                onChange={(e) => setForm({ ...form, organization_id: e.target.value })}
+              >
+                <option value="">— основное —</option>
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
               Бэкфилл с даты
               <input
                 type="date"
@@ -101,6 +131,26 @@ export default function Wallets() {
             </label>
           </div>
           <button disabled={!form.address}>Добавить</button>
+        </form>
+      )}
+
+      {isAdmin && (
+        <form className="panel" onSubmit={addOrg}>
+          <h3>Юридические лица ({orgs.length})</h3>
+          <ul className="plain">
+            {orgs.map((o) => (
+              <li key={o.id}>{o.name}{o.inn && ` · ИНН ${o.inn}`} — кошельков: {o.wallets}</li>
+            ))}
+          </ul>
+          <div className="row">
+            <input
+              placeholder="Наименование нового юрлица"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button disabled={!orgName}>Добавить юрлицо</button>
+          </div>
         </form>
       )}
 

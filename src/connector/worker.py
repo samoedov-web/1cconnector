@@ -27,6 +27,7 @@ from connector.indexer.base import ChainAdapter
 from connector.indexer.ethereum import EthereumAdapter
 from connector.indexer.service import IndexerService, merge_sources
 from connector.indexer.tron import TronAdapter
+from connector import license as license_module
 from connector.alerts import send_alert
 from connector.models import Asset, Base, Network, Wallet, utcnow
 from connector.pipeline import TransactionPipeline
@@ -244,7 +245,34 @@ async def main() -> None:
         log.error("Не настроен ни один источник данных (TRON_SOURCE_*/ETH_SOURCE_*)")
         return
     rate_service = build_rate_service()
+    last_license_status: str | None = None
     while True:
+        # Лицензия: grace и демо синхронизируют, expired/invalid — только чтение.
+        license_state = license_module.current_state()
+        if license_state.status != last_license_status:
+            if not license_state.sync_allowed:
+                log.error(
+                    "Лицензия: %s — синхронизация остановлена, чтение доступно",
+                    license_state.reason or license_state.status,
+                )
+                async with SessionFactory() as session:
+                    await send_alert(
+                        session, "error",
+                        "Лицензия не действует — синхронизация остановлена",
+                        {"status": license_state.status, "reason": license_state.reason},
+                    )
+                    await session.commit()
+            elif license_state.status == "grace":
+                log.warning(
+                    "Лицензия истекла %s, льготный период до %s — продлите лицензию",
+                    license_state.valid_until,
+                    license_state.grace_until,
+                )
+            last_license_status = license_state.status
+        if not license_state.sync_allowed:
+            await asyncio.sleep(settings.indexer_poll_interval)
+            continue
+
         async with SessionFactory() as session:
             networks = (
                 (await session.execute(select(Network).where(Network.enabled))).scalars().all()

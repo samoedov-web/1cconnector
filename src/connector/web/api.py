@@ -13,10 +13,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from connector import license as license_module
 from connector.db import get_session
 from connector.models import (
     AuditLog,
@@ -26,6 +27,7 @@ from connector.models import (
     Match,
     MatchState,
     Network,
+    Organization,
     Transaction,
     Wallet,
 )
@@ -40,6 +42,73 @@ class WalletIn(BaseModel):
     address: str
     label: str = ""
     backfill_from: datetime | None = None
+    organization_id: int | None = None  # None — основное (первое) юрлицо
+
+
+# --- Юридические лица (лицензионный лимит тарифа) ---------------------------
+
+
+class OrganizationOut(BaseModel):
+    id: int
+    name: str
+    inn: str
+    wallets: int
+
+
+@router.get("/organizations", response_model=list[OrganizationOut])
+async def list_organizations(
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_reader),
+) -> list[OrganizationOut]:
+    wallet_counts = dict(
+        (
+            await session.execute(
+                select(Wallet.organization_id, func.count()).group_by(Wallet.organization_id)
+            )
+        ).all()
+    )
+    orgs = (await session.execute(select(Organization).order_by(Organization.id))).scalars()
+    return [
+        OrganizationOut(
+            id=o.id, name=o.name, inn=o.inn, wallets=wallet_counts.get(o.id, 0)
+        )
+        for o in orgs
+    ]
+
+
+class OrganizationIn(BaseModel):
+    name: str
+    inn: str = ""
+
+
+@router.post("/organizations", response_model=OrganizationOut, status_code=201)
+async def create_organization(
+    data: OrganizationIn,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+) -> OrganizationOut:
+    state = license_module.current_state()
+    count = await session.scalar(select(func.count(Organization.id)))
+    if state.max_organizations is not None and (count or 0) >= state.max_organizations:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Пакет «{state.tier_title}» позволяет юрлиц: "
+            f"{state.max_organizations}. Для расширения перейдите на старший пакет.",
+        )
+    org = Organization(name=data.name, inn=data.inn)
+    session.add(org)
+    await session.flush()
+    session.add(
+        AuditLog(
+            actor=user.username,
+            action="organization_created",
+            entity="organization",
+            entity_id=str(org.id),
+            details={"name": data.name, "inn": data.inn},
+        )
+    )
+    await session.commit()
+    return OrganizationOut(id=org.id, name=org.name, inn=org.inn, wallets=0)
 
 
 class WalletOut(BaseModel):
@@ -80,11 +149,29 @@ async def add_wallet(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
 ) -> WalletOut:
+    state = license_module.current_state()
+    wallets_count = await session.scalar(
+        select(func.count(Wallet.id)).where(Wallet.enabled)
+    )
+    if state.max_wallets is not None and (wallets_count or 0) >= state.max_wallets:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Пакет «{state.tier_title}» позволяет отслеживаемых кошельков: "
+            f"{state.max_wallets}. Для расширения перейдите на старший пакет.",
+        )
     network = await session.scalar(select(Network).where(Network.code == data.network_code))
     if network is None:
         raise HTTPException(status_code=404, detail=f"Сеть {data.network_code} не настроена")
+    organization_id = data.organization_id
+    if organization_id is None:
+        organization_id = await session.scalar(
+            select(Organization.id).order_by(Organization.id).limit(1)
+        )
+    elif await session.get(Organization, organization_id) is None:
+        raise HTTPException(status_code=404, detail="Юрлицо не найдено")
     wallet = Wallet(
         network_id=network.id,
+        organization_id=organization_id,
         address=data.address,
         label=data.label,
         backfill_from=data.backfill_from,

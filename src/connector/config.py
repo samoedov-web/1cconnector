@@ -48,5 +48,12 @@ class Settings(BaseSettings):
     # Webhook алертов мониторинга (POST JSON); пусто — только журнал в БД.
     alert_webhook_url: str = ""
 
+    # --- Лицензирование (п. 10 ТЗ) ---
+    # Файл лицензии (выпускается scripts/license_tool.py вендора);
+    # отсутствует — деморежим (1 юрлицо, 1 кошелёк, без обновлений форм).
+    license_path: str = "license.json"
+    # Открытый ключ Ed25519 (hex) для проверки подписи лицензии.
+    license_public_key: str = ""
+
 
 settings = Settings()

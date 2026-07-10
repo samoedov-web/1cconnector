@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from connector.db import get_session
 from connector.models import AuditLog, Contract, Counterparty, Invoice
-from connector.onec.api import require_exchange_token
+from connector.onec.api import require_active_license, require_exchange_token
 
 router = APIRouter(prefix="/api/v1/onec", tags=["1c-exchange"])
 
@@ -148,6 +148,7 @@ async def sync_directories(
     data: SyncIn,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(require_exchange_token),
+    __: None = Depends(require_active_license),
 ) -> dict:
     counts = await apply_sync(session, data)
     session.add(

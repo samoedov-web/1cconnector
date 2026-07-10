@@ -69,6 +69,21 @@ class Asset(Base):
     network: Mapped[Network] = relationship()
 
 
+class Organization(Base):
+    """Юридическое лицо клиента (лицензионный лимит тарифа).
+
+    Кошельки привязываются к юрлицу; для баз, созданных до появления
+    сущности, organization_id у кошелька пуст — считается основным юрлицом.
+    """
+
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(512))
+    inn: Mapped[str] = mapped_column(String(12), default="")
+    onec_ref: Mapped[str] = mapped_column(String(64), default="")
+
+
 class Wallet(Base):
     """Отслеживаемый адрес компании (свой кошелёк). Только публичный адрес."""
 
@@ -77,6 +92,7 @@ class Wallet(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     network_id: Mapped[int] = mapped_column(ForeignKey("networks.id"))
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"))
     address: Mapped[str] = mapped_column(String(128))
     label: Mapped[str] = mapped_column(String(256), default="")
     backfill_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

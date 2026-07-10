@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from connector import license as license_module
 from connector.config import settings
 from connector.db import get_session
 from connector.models import AuditLog, OnecDocStatus, OnecDocument, utcnow
@@ -32,6 +33,24 @@ def require_exchange_token(x_exchange_token: str = Header(default="")) -> None:
         x_exchange_token, settings.onec_exchange_token
     ):
         raise HTTPException(status_code=401, detail="Неверный токен обмена")
+
+
+def require_active_license() -> None:
+    """Обмен с 1С требует действующей лицензии (grace и демо — работают).
+
+    402 с человекочитаемой причиной — расширение 1С пишет её в журнал
+    регистрации, а не падает (требование стыка с «1С:Совместимо»).
+    """
+    state = license_module.current_state()
+    if not state.sync_allowed:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "Лицензия коннектора не действует: "
+                + (state.reason or state.status)
+                + ". Обмен с 1С приостановлен, данные доступны для чтения в панели."
+            ),
+        )
 
 
 class DocumentOut(BaseModel):
@@ -52,6 +71,7 @@ async def pull_documents(
     limit: int = Query(default=100, le=1000),
     session: AsyncSession = Depends(get_session),
     _: None = Depends(require_exchange_token),
+    __: None = Depends(require_active_license),
 ) -> list[DocumentOut]:
     docs = (
         (
@@ -87,6 +107,7 @@ async def ack_documents(
     acks: list[AckIn],
     session: AsyncSession = Depends(get_session),
     _: None = Depends(require_exchange_token),
+    __: None = Depends(require_active_license),
 ) -> dict:
     confirmed = 0
     for ack in acks:

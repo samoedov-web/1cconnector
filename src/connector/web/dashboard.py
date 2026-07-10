@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from connector import license as license_module
 from connector.db import get_session
 from connector.models import (
     Alert,
@@ -13,12 +14,41 @@ from connector.models import (
     MatchState,
     Network,
     OnecDocument,
+    Organization,
     Transaction,
     Wallet,
 )
 from connector.security import CurrentUser, require_reader
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+
+
+@router.get("/license")
+async def license_status(
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_reader),
+) -> dict:
+    """Статус лицензии и использование лимитов пакета."""
+    state = license_module.current_state()
+    organizations = await session.scalar(select(func.count(Organization.id)))
+    wallets = await session.scalar(select(func.count(Wallet.id)).where(Wallet.enabled))
+    return {
+        "status": state.status,
+        "tier": state.tier,
+        "tier_title": state.tier_title,
+        "issued_to": state.issued_to,
+        "valid_until": state.valid_until.isoformat() if state.valid_until else None,
+        "grace_until": state.grace_until.isoformat() if state.grace_until else None,
+        "sync_allowed": state.sync_allowed,
+        "report_updates": state.report_updates,
+        "reason": state.reason,
+        "usage": {
+            "organizations": organizations or 0,
+            "max_organizations": state.max_organizations,
+            "wallets": wallets or 0,
+            "max_wallets": state.max_wallets,
+        },
+    }
 
 
 @router.get("")

@@ -24,6 +24,9 @@ services:
     volumes:
       # Обновляемые шаблоны отчётности — заменяются без пересборки образа.
       - ./templates:/app/templates:ro
+      # Лицензия: раскомментировать после получения license.json от вендора
+      # (без файла — деморежим: 1 юрлицо, 1 кошелёк).
+      # - ./license.json:/app/license.json:ro
     depends_on:
       db:
         condition: service_healthy

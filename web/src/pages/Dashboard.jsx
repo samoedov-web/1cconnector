@@ -22,16 +22,65 @@ function age(iso) {
   return `${Math.round(minutes / 60)} ч назад`
 }
 
+const LICENSE_BADGE = { valid: 'ok', grace: 'warn', demo: 'warn', expired: 'err', invalid: 'err' }
+const LICENSE_LABEL = {
+  valid: 'действует',
+  grace: 'льготный период',
+  demo: 'деморежим',
+  expired: 'истекла',
+  invalid: 'повреждена',
+}
+
+function limit(used, max) {
+  return max === null ? `${used} / без ограничений` : `${used} / ${max}`
+}
+
+function LicenseBlock({ lic }) {
+  if (!lic) return null
+  return (
+    <div className="panel" style={{ marginTop: 0, marginBottom: 16 }}>
+      <div className="row space-between">
+        <h3 style={{ margin: 0 }}>
+          Лицензия: пакет «{lic.tier_title}»
+          <span className={`badge ${LICENSE_BADGE[lic.status] || 'off'}`}>
+            {LICENSE_LABEL[lic.status] || lic.status}
+          </span>
+        </h3>
+        <span className="muted">
+          {lic.issued_to && `${lic.issued_to} · `}
+          {lic.valid_until
+            ? `до ${new Date(lic.valid_until).toLocaleDateString('ru-RU')}`
+            : 'без файла лицензии'}
+        </span>
+      </div>
+      <div className="kv" style={{ marginBottom: 0 }}>
+        <span>Юр. лица</span><b>{limit(lic.usage.organizations, lic.usage.max_organizations)}</b>
+        <span>Кошельки</span><b>{limit(lic.usage.wallets, lic.usage.max_wallets)}</b>
+        <span>Обновления форм отчётности</span>
+        <b>{lic.report_updates ? 'включены' : 'не входят в пакет'}</b>
+        {!lic.sync_allowed && (<>
+          <span>Синхронизация</span>
+          <b className="error" style={{ padding: '2px 8px' }}>
+            остановлена{lic.reason ? `: ${lic.reason}` : ''} — данные доступны для чтения
+          </b>
+        </>)}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [data, setData] = useState(null)
+  const [lic, setLic] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    api('/api/v1/dashboard').then(setData).catch((e) => setError(e.message))
-    const timer = setInterval(
-      () => api('/api/v1/dashboard').then(setData).catch(() => {}),
-      30_000,
-    )
+    const load = () => {
+      api('/api/v1/dashboard').then(setData).catch((e) => setError(e.message))
+      api('/api/v1/dashboard/license').then(setLic).catch(() => {})
+    }
+    load()
+    const timer = setInterval(load, 30_000)
     return () => clearInterval(timer)
   }, [])
 
@@ -41,6 +90,7 @@ export default function Dashboard() {
   return (
     <>
       <h1>Мониторинг</h1>
+      <LicenseBlock lic={lic} />
       <div className="cards">
         {Object.entries(TX_LABELS).map(([key, label]) => (
           <div className="card" key={key}>

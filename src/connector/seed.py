@@ -16,7 +16,7 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from connector.models import Asset, Network
+from connector.models import Asset, Network, Organization
 
 log = logging.getLogger("connector.seed")
 
@@ -38,11 +38,20 @@ DEFAULT_ASSETS = [
 ]
 
 
+async def ensure_default_organization(session: AsyncSession) -> None:
+    """Гарантировать хотя бы одно юрлицо (лицензионные лимиты считают их)."""
+    count = await session.scalar(select(func.count(Organization.id)))
+    if not count:
+        session.add(Organization(name="Основная организация"))
+        await session.flush()
+
+
 async def seed_defaults(session: AsyncSession) -> bool:
     """Создать сети и активы по умолчанию, если справочники пусты.
 
     Возвращает True, если что-то было создано.
     """
+    await ensure_default_organization(session)
     networks_count = await session.scalar(select(func.count(Network.id)))
     assets_count = await session.scalar(select(func.count(Asset.id)))
     if networks_count or assets_count:
