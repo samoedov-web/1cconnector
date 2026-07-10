@@ -30,6 +30,7 @@ from connector.indexer.service import IndexerService, merge_sources
 import connector.indexer.tron  # noqa: F401
 from connector import license as license_module
 from connector.alerts import send_alert
+from connector.custody.service import mark_stale_runs
 from connector.models import Asset, Base, Network, Wallet, utcnow
 from connector.pipeline import TransactionPipeline
 from connector.rates.service import RateService
@@ -226,6 +227,11 @@ async def poll_network(
                 f"Сеть {network.code}: реорг затронул {len(reorged)} транзакций",
                 {"hashes": [t.tx_hash for t in reorged][:20]},
             )
+            # Сверки, включавшие затронутые транзакции, больше недостоверны
+            # (сценарий 6.10 depository-спеки) — пометить устаревшими.
+            stale = await mark_stale_runs(session)
+            if stale:
+                log.warning("Помечено устаревших сверок с депозитарием: %d", stale)
         finalized = await service.advance_finality(network, latest_block)
         if finalized:
             log.info("Сеть %s: финализировано транзакций %d", network.code, len(finalized))
