@@ -124,6 +124,7 @@ function RunDetail({ runId, onChanged }) {
 }
 
 export default function Reconciliation() {
+  const [mode, setMode] = useState(null)
   const [sourceInfo, setSourceInfo] = useState(null)
   const [runs, setRuns] = useState([])
   const [openRun, setOpenRun] = useState(null)
@@ -136,8 +137,12 @@ export default function Reconciliation() {
   const canEdit = ['admin', 'operator'].includes(getAuth()?.role)
 
   const load = useCallback(() => {
-    api('/api/v1/reconciliation/sources').then(setSourceInfo).catch((e) => setError(e.message))
-    api('/api/v1/reconciliation/runs').then(setRuns).catch((e) => setError(e.message))
+    api('/api/v1/reconciliation/mode').then((m) => {
+      setMode(m)
+      if (m.mode !== 'shadow') return
+      api('/api/v1/reconciliation/sources').then(setSourceInfo).catch((e) => setError(e.message))
+      api('/api/v1/reconciliation/runs').then(setRuns).catch((e) => setError(e.message))
+    }).catch((e) => setError(e.message))
   }, [])
   useEffect(load, [load])
 
@@ -178,6 +183,20 @@ export default function Reconciliation() {
     } finally {
       setBusy(false)
     }
+  }
+
+  if (mode && mode.mode !== 'shadow') {
+    return (
+      <>
+        <h1>Сверка с депозитарием</h1>
+        <div className="panel" style={{ marginTop: 0 }}>
+          <span className={`badge ${mode.mode === 'active' ? 'err' : 'off'}`}>
+            custody_mode={mode.mode}
+          </span>
+          <p>{mode.message}</p>
+        </div>
+      </>
+    )
   }
 
   return (

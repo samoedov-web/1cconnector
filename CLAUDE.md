@@ -38,6 +38,7 @@ ALTER-операции — в `op.batch_alter_table`. Все суммы — `Dec
 | `src/connector/onec/` | обмен с 1С: идемпотентность по ключу, синхронизация справочников (GUID) |
 | `src/connector/reports/` + `templates/reports/` | печатные формы (HTML/XLSX/JSON) |
 | `src/connector/web/` | API панели (RBAC), `web/` — React-панель |
+| `src/connector/custody/` + `sources/` | депозитарная сверка: DepositoryAdapter, движок, режимы custody_mode |
 | `src/connector/license.py` | пакеты Старт/Бизнес/Холдинг, Ed25519 |
 | `onec-extension/` | BSL-модуль и спецификация расширения 1С |
 

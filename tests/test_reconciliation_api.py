@@ -52,6 +52,7 @@ async def env(monkeypatch, tmp_path):
 
     monkeypatch.setattr(settings, "secret_key", SECRET)
     monkeypatch.setattr(settings, "custody_fixtures_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "custody_mode", "shadow")
 
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",

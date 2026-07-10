@@ -31,6 +31,36 @@ from connector.sources.registry import create_custody_source, custody_source_cod
 
 router = APIRouter(prefix="/api/v1/reconciliation", tags=["reconciliation"])
 
+ADR_ACTIVE = "docs/adr/ADR-001-custody-first.md"
+
+MODE_MESSAGES = {
+    "off": "Слой депозитарной сверки выключен (custody_mode=off). Для загрузки "
+           "выписок и сверки установите CONNECTOR_CUSTODY_MODE=shadow — на учёт "
+           "это не влияет: источник истины остаётся блокчейн.",
+    "shadow": "Режим shadow: выписки загружаются и сверяются, в 1С уходит только "
+              "информационный регистр. Источник истины для учёта — блокчейн.",
+    "active": "Режим custody_mode=active будет доступен после вступления в силу "
+              "требований о цифровых депозитариях (01.07.2027) и появления их "
+              f"API. Дизайн перехода: {ADR_ACTIVE}. Используйте режим shadow.",
+}
+
+
+def require_custody_shadow() -> None:
+    """Гейт custody-слоя (п. 4.7 спеки): работает только режим shadow."""
+    mode = settings.custody_mode
+    if mode == "shadow":
+        return
+    if mode == "active":
+        raise HTTPException(status_code=501, detail=MODE_MESSAGES["active"])
+    raise HTTPException(status_code=403, detail=MODE_MESSAGES["off"])
+
+
+@router.get("/mode")
+async def custody_mode(user: CurrentUser = Depends(require_reader)) -> dict:
+    """Текущий режим custody-слоя — панель показывает состояние без гейта."""
+    mode = settings.custody_mode
+    return {"mode": mode, "message": MODE_MESSAGES[mode]}
+
 
 def _adapter():
     return create_custody_source(
@@ -39,7 +69,10 @@ def _adapter():
 
 
 @router.get("/sources")
-async def sources(user: CurrentUser = Depends(require_reader)) -> dict:
+async def sources(
+    user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
+) -> dict:
     adapter = _adapter()
     caps = adapter.capabilities()
     return {
@@ -65,6 +98,7 @@ async def fetch_statements(
     data: PeriodIn,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_operator),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     """Загрузить выписки адаптера за период в журнал неизменяемости."""
     adapter = _adapter()
@@ -123,6 +157,7 @@ async def create_run(
     data: RunIn,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_operator),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     config = ReconConfig(
         tolerance_abs=data.tolerance_abs,
@@ -152,6 +187,7 @@ async def create_run(
 async def list_runs(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
 ) -> list[dict]:
     runs = (
         (
@@ -173,6 +209,7 @@ async def run_detail(
     run_id: int,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     from connector.custody.report import reconciliation_report_data
 
@@ -193,6 +230,7 @@ async def resolve_result(
     data: ResolveIn,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_operator),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     """Ручной разбор расхождения: оператор связывает/принимает строку."""
     result = await session.get(ReconciliationResult, result_id)
