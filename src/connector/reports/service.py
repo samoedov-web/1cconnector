@@ -9,14 +9,13 @@ SHA-256 канонизированного сырого ответа ноды. �
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from connector.hashing import canonical_sha256
 from connector.models import (
     Contract,
     Counterparty,
@@ -30,8 +29,7 @@ from connector.models import (
 
 def raw_response_sha256(raw: dict) -> str:
     """Хэш канонизированного сырого ответа ноды — для сверки при проверках."""
-    canonical = json.dumps(raw, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return canonical_sha256(raw)
 
 
 def _immutability_block(tx: Transaction) -> dict:

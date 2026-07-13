@@ -352,6 +352,73 @@ class Revaluation(Base):
     asset: Mapped[Asset] = relationship()
 
 
+# --- Депозитарная сверка (specs/depository-adapter.md, фаза 2) --------------
+
+
+class CustodyOperationType(enum.StrEnum):
+    """Тип операции строки выписки (п. 4.2 спеки)."""
+
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    TRADE = "trade"
+    FEE = "fee"
+    TRANSFER_INTERNAL = "transfer_internal"
+    OTHER = "other"
+
+
+class CustodyStatement(Base):
+    """Выписка депозитария за период — неизменяемая первичка.
+
+    raw_payload хранится как получен (+ checksum по канонизированному JSON),
+    на PostgreSQL защищён триггерами — та же схема журнала неизменяемости,
+    что для ответов нод. Дедупликация по (source_id, statement_id).
+    """
+
+    __tablename__ = "custody_statements"
+    __table_args__ = (UniqueConstraint("source_id", "statement_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    statement_id: Mapped[str] = mapped_column(String(128))  # id у депозитария
+    source_id: Mapped[str] = mapped_column(String(64))  # какой адаптер отдал
+    period_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_to: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    raw_payload: Mapped[dict] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))  # SHA-256 raw_payload
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    entries: Mapped[list["CustodyEntry"]] = relationship(back_populates="statement")
+
+
+class CustodyEntry(Base):
+    """Строка выписки депозитария (нормализованный слой).
+
+    amount — Decimal со знаком (знак = направление); необязательные поля
+    (network, counterparty_ref, external_tx_hash) отражают capabilities
+    конкретного депозитария — движок сверки обязан работать при любой
+    их комбинации. raw_line — сырая строка как получена.
+    """
+
+    __tablename__ = "custody_entries"
+    __table_args__ = (UniqueConstraint("statement_pk", "entry_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entry_id: Mapped[str] = mapped_column(String(128))  # id строки у депозитария
+    statement_pk: Mapped[int] = mapped_column(ForeignKey("custody_statements.id"))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    asset: Mapped[str] = mapped_column(String(32))  # тикер выписки (маппинг — фаза 4)
+    network: Mapped[str | None] = mapped_column(String(32))
+    amount: Mapped[Decimal] = mapped_column(AMOUNT)  # знак = направление
+    operation_type: Mapped[CustodyOperationType] = mapped_column(
+        Enum(CustodyOperationType, native_enum=False)
+    )
+    counterparty_ref: Mapped[str | None] = mapped_column(String(256))
+    external_tx_hash: Mapped[str | None] = mapped_column(String(128))
+    raw_line: Mapped[dict] = mapped_column(JSON)
+
+    statement: Mapped[CustodyStatement] = relationship(back_populates="entries")
+
+
 # --- Обмен с 1С ------------------------------------------------------------
 
 
