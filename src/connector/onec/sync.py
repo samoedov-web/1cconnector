@@ -25,6 +25,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from connector.aml.base import AmlAdapter
+from connector.config import settings
 from connector.db import get_session
 from connector.models import (
     AuditLog,
@@ -35,6 +37,17 @@ from connector.models import (
     Network,
 )
 from connector.onec.api import require_active_license, require_exchange_token
+from connector.sources.registry import create_aml_source
+
+
+def _default_aml_adapter() -> AmlAdapter:
+    # Импорт регистрирует мок-провайдера; реальный (фаза 5) подключится
+    # тем же реестром по settings.aml_source_id.
+    import connector.aml.mock_adapter  # noqa: F401
+
+    return create_aml_source(
+        settings.aml_source_id, fixtures_path=settings.aml_fixtures_path
+    )
 
 
 def guess_network_code(address: str) -> str | None:
@@ -79,7 +92,9 @@ class SyncIn(BaseModel):
     invoices: list[InvoiceIn] = []
 
 
-async def apply_sync(session: AsyncSession, data: SyncIn) -> dict[str, int]:
+async def apply_sync(
+    session: AsyncSession, data: SyncIn, aml_adapter: AmlAdapter | None = None
+) -> dict[str, int]:
     counts = {"counterparties": 0, "contracts": 0, "invoices": 0}
 
     for cp in data.counterparties:
@@ -140,29 +155,42 @@ async def apply_sync(session: AsyncSession, data: SyncIn) -> dict[str, int]:
             select(Invoice).where(Invoice.onec_ref == inv.onec_ref)
         )
         if existing is None:
-            session.add(
-                Invoice(
-                    contract_id=contract.id,
-                    number=inv.number,
-                    amount=inv.amount,
-                    currency=inv.currency,
-                    due_from=inv.due_from,
-                    due_to=inv.due_to,
-                    onec_ref=inv.onec_ref,
-                    crypto_address=inv.crypto_address,
-                )
+            invoice_row = Invoice(
+                contract_id=contract.id,
+                number=inv.number,
+                amount=inv.amount,
+                currency=inv.currency,
+                due_from=inv.due_from,
+                due_to=inv.due_to,
+                onec_ref=inv.onec_ref,
+                crypto_address=inv.crypto_address,
             )
+            session.add(invoice_row)
+            await session.flush()
         else:
-            existing.contract_id = contract.id
-            existing.number = inv.number
-            existing.amount = inv.amount
-            existing.currency = inv.currency
-            existing.due_from = inv.due_from
-            existing.due_to = inv.due_to
-            existing.crypto_address = inv.crypto_address
+            invoice_row = existing
+            invoice_row.contract_id = contract.id
+            invoice_row.number = inv.number
+            invoice_row.amount = inv.amount
+            invoice_row.currency = inv.currency
+            invoice_row.due_from = inv.due_from
+            invoice_row.due_to = inv.due_to
+            invoice_row.crypto_address = inv.crypto_address
         counts["invoices"] += 1
         if inv.crypto_address:
             await _remember_invoice_address(session, contract, inv.crypto_address)
+            # Шаги 2–3 регламента: ожидаемый платёж + AML-проверка адреса
+            # ДО отправки средств.
+            from connector.aml.flow import ensure_expected_payment
+
+            network_code = guess_network_code(inv.crypto_address)
+            if network_code is not None:
+                await ensure_expected_payment(
+                    session,
+                    invoice_row,
+                    network_code,
+                    aml_adapter or _default_aml_adapter(),
+                )
     await session.flush()
     return counts
 

@@ -379,6 +379,57 @@ class AmlScreening(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ExpectedPaymentStatus(enum.StrEnum):
+    """Статусная машина ожидаемого платежа (шаги 2–7 регламента).
+
+    pending_aml → aml_approved | aml_review | aml_rejected
+    aml_review  → aml_approved | aml_rejected   (решение комплаенса, фаза 3)
+    aml_approved → sent → matched                (связывание, фаза 4)
+    aml_approved → expired                       (срок одобрения — вопрос 7.1)
+    """
+
+    PENDING_AML = "pending_aml"
+    AML_APPROVED = "aml_approved"
+    AML_REVIEW = "aml_review"
+    AML_REJECTED = "aml_rejected"
+    SENT = "sent"
+    MATCHED = "matched"
+    EXPIRED = "expired"
+
+
+class ExpectedPayment(Base):
+    """Ожидаемый исходящий платёж по инвойсу (шаг 2 регламента).
+
+    Создаётся автоматически из инвойса с адресом кошелька нерезидента;
+    AML-проверка адреса — до отправки средств. Замена адреса нерезидентом
+    (сценарий 1 регламента) — новая запись: прежняя с aml_rejected остаётся
+    доказательной базой, уникальность — (invoice_id, to_address).
+    """
+
+    __tablename__ = "expected_payments"
+    __table_args__ = (UniqueConstraint("invoice_id", "to_address"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"))
+    to_address: Mapped[str] = mapped_column(String(128))
+    network: Mapped[str] = mapped_column(String(32))
+    amount: Mapped[Decimal] = mapped_column(AMOUNT)  # сумма инвойса
+    currency: Mapped[str] = mapped_column(String(8))
+    tolerance: Mapped[Decimal] = mapped_column(AMOUNT)  # доля, из настроек
+    status: Mapped[ExpectedPaymentStatus] = mapped_column(
+        Enum(ExpectedPaymentStatus, native_enum=False),
+        default=ExpectedPaymentStatus.PENDING_AML,
+    )
+    aml_screening_id: Mapped[int | None] = mapped_column(ForeignKey("aml_screenings.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    status_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    invoice: Mapped[Invoice] = relationship()
+    aml_screening: Mapped["AmlScreening | None"] = relationship()
+
+
 # --- Обмен с 1С ------------------------------------------------------------
 
 

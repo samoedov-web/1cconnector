@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # конфигурация; до подключения реального провайдера — мок с фикстурами.
     aml_source_id: str = "mock-aml"
     aml_fixtures_path: str = "fixtures/aml.json"
+    # Пороги решений по risk_score (шаг 3 регламента): 0..approved — можно
+    # отправлять; ..review — решение комплаенс-офицера; выше — запрещено.
+    aml_approved_max_score: int = 30
+    aml_review_max_score: int = 70
 
     # --- Лицензирование (п. 10 ТЗ) ---
     # Файл лицензии (выпускается scripts/license_tool.py вендора);
