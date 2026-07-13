@@ -33,6 +33,16 @@ function TxCard({ txId, onClose }) {
           <span>Сумма в рублях</span><b>{card.rate.amount_rub} ₽</b>
           <span>Курс / источник</span><b>{card.rate.asset_to_rub} ({card.rate.source})</b>
         </>)}
+        {card.aml && (<>
+          <span>Регламент оплаты</span>
+          <b>
+            {card.aml.linked
+              ? <span className="badge ok">ожидаемый платёж №{card.aml.expected_payment_id} · {card.aml.status}</span>
+              : card.aml.internal
+                ? <span className="badge off">внутреннее перемещение</span>
+                : <span className="badge err">вне регламента — нет одобренного ожидания</span>}
+          </b>
+        </>)}
       </div>
 
       <h4>Привязки</h4>

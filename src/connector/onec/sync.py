@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from connector.aml.base import AmlAdapter
-from connector.config import settings
+from connector.aml.flow import default_aml_adapter, ensure_expected_payment
 from connector.db import get_session
 from connector.models import (
     AuditLog,
@@ -37,17 +37,6 @@ from connector.models import (
     Network,
 )
 from connector.onec.api import require_active_license, require_exchange_token
-from connector.sources.registry import create_aml_source
-
-
-def _default_aml_adapter() -> AmlAdapter:
-    # Импорт регистрирует мок-провайдера; реальный (фаза 5) подключится
-    # тем же реестром по settings.aml_source_id.
-    import connector.aml.mock_adapter  # noqa: F401
-
-    return create_aml_source(
-        settings.aml_source_id, fixtures_path=settings.aml_fixtures_path
-    )
 
 
 def guess_network_code(address: str) -> str | None:
@@ -181,15 +170,13 @@ async def apply_sync(
             await _remember_invoice_address(session, contract, inv.crypto_address)
             # Шаги 2–3 регламента: ожидаемый платёж + AML-проверка адреса
             # ДО отправки средств.
-            from connector.aml.flow import ensure_expected_payment
-
             network_code = guess_network_code(inv.crypto_address)
             if network_code is not None:
                 await ensure_expected_payment(
                     session,
                     invoice_row,
                     network_code,
-                    aml_adapter or _default_aml_adapter(),
+                    aml_adapter or default_aml_adapter(),
                 )
     await session.flush()
     return counts
