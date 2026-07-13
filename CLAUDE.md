@@ -43,6 +43,12 @@ ALTER-операции — в `op.batch_alter_table`. Все суммы — `Dec
 
 ## Активные спецификации
 
+- **`specs/payment-regulation.md`** — регламент оплаты по ВЭД-контракту
+  (14 шагов, уведомительный режим); источник требований для AML-слоя
+  и уведомления ФНС. Таблица соответствия: `docs/regulation-compliance.md`.
+- **`specs/aml-adapter.md`** — AML-слой и ожидаемые платежи (AmlAdapter,
+  ExpectedPayment, роли compliance/treasurer). По фазам из раздела 6,
+  вопросы — в раздел 7 спеки.
 - **`specs/depository-adapter.md`** — слой депозитарной сверки
   (DataSource/CustodySource, движок сверки, режимы `custody_mode`).
   Работать строго по фазам из раздела 9 спеки — по одной фазе за сессию,

@@ -79,6 +79,20 @@ function TxCard({ txId, onClose }) {
         >
           Акт (XLSX)
         </button>
+        <button
+          className="secondary"
+          onClick={() => openReport(`/api/v1/reports/fns-notification/${card.id}`, { format: 'html' })}
+        >
+          Уведомление ФНС
+        </button>
+        <button
+          className="secondary"
+          onClick={() =>
+            openReport(`/api/v1/reports/fns-notification/${card.id}`, { format: 'xml' }, `fns-notification-${card.id}.xml`)
+          }
+        >
+          ФНС (XML)
+        </button>
       </div>
     </div>
   )

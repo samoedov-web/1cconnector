@@ -83,6 +83,7 @@ async def _allocations(session: AsyncSession, tx_id: int) -> list[dict]:
                 "contract_registration_number": (
                     contract.registration_number if contract else None
                 ),
+                "kvvo": contract.kvvo if contract else None,
                 "invoice_number": invoice.number if invoice else None,
             }
         )

@@ -34,6 +34,12 @@ class ReportFormat(StrEnum):
     JSON = "json"
 
 
+class FnsFormat(StrEnum):
+    HTML = "html"
+    XML = "xml"  # машиночитаемая выгрузка под ТКС
+    JSON = "json"
+
+
 def _respond(data: dict, fmt: ReportFormat, template: str, xlsx_builder, filename: str):
     if fmt == ReportFormat.JSON:
         return JSONResponse(data)
@@ -60,6 +66,33 @@ async def payment_act(
     return _respond(
         data, format, "payment_act.html", payment_act_xlsx, f"payment-act-{tx_id}"
     )
+
+
+@router.get("/fns-notification/{tx_id}")
+async def fns_notification(
+    tx_id: int,
+    format: FnsFormat = Query(default=FnsFormat.HTML),
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_reader),
+):
+    """Уведомление ФНС о расчёте в ЦВ (шаги 11–12 регламента оплаты)."""
+    from connector.reports.fns import fns_notification_data, fns_notification_xml
+
+    data = await fns_notification_data(session, tx_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Транзакция не найдена")
+    if format == FnsFormat.JSON:
+        return JSONResponse(data)
+    if format == FnsFormat.XML:
+        return Response(
+            content=fns_notification_xml(data),
+            media_type="application/xml; charset=utf-8",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="fns-notification-{tx_id}.xml"'
+            },
+        )
+    return HTMLResponse(render_html("fns_notification.html", data))
 
 
 @router.get("/tax-register")

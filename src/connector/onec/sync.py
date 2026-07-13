@@ -26,8 +26,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from connector.db import get_session
-from connector.models import AuditLog, Contract, Counterparty, Invoice
+from connector.models import (
+    AuditLog,
+    Contract,
+    Counterparty,
+    CounterpartyAddress,
+    Invoice,
+    Network,
+)
 from connector.onec.api import require_active_license, require_exchange_token
+
+
+def guess_network_code(address: str) -> str | None:
+    """Определить сеть по формату адреса (для адреса из инвойса)."""
+    if address.startswith("T") and 30 <= len(address) <= 40:
+        return "tron"
+    if address.lower().startswith("0x") and len(address) == 42:
+        return "ethereum"
+    return None
 
 router = APIRouter(prefix="/api/v1/onec", tags=["1c-exchange"])
 
@@ -41,8 +57,9 @@ class ContractIn(BaseModel):
     onec_ref: str = Field(min_length=1)
     counterparty_ref: str = Field(min_length=1)
     number: str
-    registration_number: str = ""  # учётный номер (валютный контроль)
+    registration_number: str = ""  # УНК (валютный контроль)
     currency: str
+    kvvo: str = ""  # код вида валютной операции (181-И)
 
 
 class InvoiceIn(BaseModel):
@@ -53,6 +70,7 @@ class InvoiceIn(BaseModel):
     currency: str
     due_from: datetime | None = None
     due_to: datetime | None = None
+    crypto_address: str = ""  # адрес кошелька нерезидента из инвойса
 
 
 class SyncIn(BaseModel):
@@ -95,6 +113,7 @@ async def apply_sync(session: AsyncSession, data: SyncIn) -> dict[str, int]:
                     number=c.number,
                     registration_number=c.registration_number,
                     currency=c.currency,
+                    kvvo=c.kvvo,
                     onec_ref=c.onec_ref,
                 )
             )
@@ -103,6 +122,7 @@ async def apply_sync(session: AsyncSession, data: SyncIn) -> dict[str, int]:
             existing.number = c.number
             existing.registration_number = c.registration_number
             existing.currency = c.currency
+            existing.kvvo = c.kvvo
         counts["contracts"] += 1
     await session.flush()
 
@@ -129,6 +149,7 @@ async def apply_sync(session: AsyncSession, data: SyncIn) -> dict[str, int]:
                     due_from=inv.due_from,
                     due_to=inv.due_to,
                     onec_ref=inv.onec_ref,
+                    crypto_address=inv.crypto_address,
                 )
             )
         else:
@@ -138,9 +159,44 @@ async def apply_sync(session: AsyncSession, data: SyncIn) -> dict[str, int]:
             existing.currency = inv.currency
             existing.due_from = inv.due_from
             existing.due_to = inv.due_to
+            existing.crypto_address = inv.crypto_address
         counts["invoices"] += 1
+        if inv.crypto_address:
+            await _remember_invoice_address(session, contract, inv.crypto_address)
     await session.flush()
     return counts
+
+
+async def _remember_invoice_address(
+    session: AsyncSession, contract: Contract, address: str
+) -> None:
+    """Адрес нерезидента из инвойса → справочник адресов контрагента.
+
+    Шаги 1–2 регламента оплаты: система знает адрес получателя ДО платежа —
+    правило №1 автоматчинга сработает без ручного разбора, а AML-слой
+    (specs/aml-adapter.md) получит адрес для проверки до отправки средств.
+    """
+    network_code = guess_network_code(address)
+    if network_code is None:
+        return  # формат не распознан — адрес остаётся только на инвойсе
+    network_id = await session.scalar(select(Network.id).where(Network.code == network_code))
+    if network_id is None:
+        return
+    exists = await session.scalar(
+        select(CounterpartyAddress.id).where(
+            CounterpartyAddress.network_id == network_id,
+            CounterpartyAddress.address == address,
+        )
+    )
+    if exists is None:
+        session.add(
+            CounterpartyAddress(
+                counterparty_id=contract.counterparty_id,
+                network_id=network_id,
+                address=address,
+                origin="invoice",
+            )
+        )
 
 
 @router.post("/sync")

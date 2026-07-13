@@ -81,6 +81,7 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(512))
     inn: Mapped[str] = mapped_column(String(12), default="")
+    kpp: Mapped[str] = mapped_column(String(9), default="")  # для уведомления ФНС
     onec_ref: Mapped[str] = mapped_column(String(64), default="")
 
 
@@ -141,8 +142,11 @@ class Contract(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     counterparty_id: Mapped[int] = mapped_column(ForeignKey("counterparties.id"))
     number: Mapped[str] = mapped_column(String(128))
-    registration_number: Mapped[str] = mapped_column(String(128), default="")  # учётный номер
+    registration_number: Mapped[str] = mapped_column(String(128), default="")  # УНК
     currency: Mapped[str] = mapped_column(String(8))  # валюта контракта: USD, EUR, CNY
+    # Код вида валютной операции (справочник ЦБ, 181-И) — уходит в документ
+    # 1С и уведомление ФНС (шаги 2, 9, 11 регламента оплаты).
+    kvvo: Mapped[str] = mapped_column(String(8), default="")
     onec_ref: Mapped[str] = mapped_column(String(64), default="")
 
     counterparty: Mapped[Counterparty] = relationship()
@@ -172,6 +176,10 @@ class Invoice(Base):
     )
     paid_amount: Mapped[Decimal] = mapped_column(AMOUNT, default=Decimal(0))
     onec_ref: Mapped[str] = mapped_column(String(64), default="")
+    # Адрес криптокошелька нерезидента из инвойса (шаг 1 регламента) —
+    # при синхронизации попадает в справочник адресов контрагента, и
+    # автоматчинг знает адрес ДО платежа.
+    crypto_address: Mapped[str] = mapped_column(String(128), default="")
 
     contract: Mapped[Contract] = relationship()
 
