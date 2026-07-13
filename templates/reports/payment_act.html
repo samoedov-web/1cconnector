@@ -59,7 +59,24 @@
   {% endfor %}
 </table>
 
-<div class="section">4. Доказательная база (журнал неизменяемости)</div>
+{% if aml and aml.status != "not_required" %}
+<div class="section">4. Проверка AML адреса получателя (регламент оплаты)</div>
+<table>
+  {% if aml.status == "performed" %}
+  <tr><th style="width:40%">Статус проверки</th><td>проведена до отправки средств</td></tr>
+  <tr><th>Оценка риска (0–100)</th><td>{{ aml.risk_score if aml.risk_score is not none else "—" }}{% if aml.categories %} ({{ aml.categories | join(", ") }}){% endif %}</td></tr>
+  <tr><th>Провайдер / момент проверки</th><td>{{ aml.provider or "—" }} / {{ aml.screened_at or "—" }}</td></tr>
+  <tr><th>Статус ожидаемого платежа</th><td>{{ aml.payment_status }}</td></tr>
+  {% if aml.decided_by %}
+  <tr><th>Решение комплаенс-офицера</th><td>{{ aml.decided_by }}{% if aml.decision_note %}: {{ aml.decision_note }}{% endif %}</td></tr>
+  {% endif %}
+  {% else %}
+  <tr><th style="width:40%">Статус проверки</th><td>не проведена — {{ aml.note }}</td></tr>
+  {% endif %}
+</table>
+{% endif %}
+
+<div class="section">{{ "5" if aml and aml.status != "not_required" else "4" }}. Доказательная база (журнал неизменяемости)</div>
 <table>
   <tr><th style="width:40%">Блокчейн-сеть</th><td>{{ immutability.network }}</td></tr>
   <tr><th>Хэш транзакции</th><td class="mono">{{ immutability.tx_hash }}</td></tr>

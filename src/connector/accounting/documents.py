@@ -78,8 +78,14 @@ def build_disposal(
     rate: RateSnapshot,
     allocations: list[Allocation1C],
     fifo: DisposalResult,
+    aml: dict | None = None,
 ) -> dict:
-    """«Выбытие цифровой валюты»: оплата поставщику / продажа за рубли."""
+    """«Выбытие цифровой валюты»: оплата поставщику / продажа за рубли.
+
+    aml — результат проверки адреса получателя (шаг 9 регламента):
+    бухгалтер видит скор, провайдера и решение комплаенса прямо в
+    проекте документа перед проведением.
+    """
     return _base_payload(tx, rate) | {
         "doc_type": OnecDocType.DISPOSAL.value,
         "from_wallet": tx.wallet.address,
@@ -92,6 +98,7 @@ def build_disposal(
             for p in fifo.parts
         ],
         "allocations": allocations,
+        "aml": aml,
     }
 
 

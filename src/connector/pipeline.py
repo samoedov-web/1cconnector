@@ -39,7 +39,7 @@ from connector.accounting.fifo import (
     LotView,
     get_method,
 )
-from connector.aml.flow import mark_matched
+from connector.aml.flow import aml_summary, mark_matched
 from connector.config import settings
 from connector.matching.engine import InvoiceView, TxView, match_transaction
 from connector.models import (
@@ -381,15 +381,19 @@ class TransactionPipeline:
                     cost_rub=part.cost_rub,
                 )
             )
+        # Замыкание регламента (шаг 6): связанное ожидание sent → matched —
+        # до сборки payload, чтобы документ нёс итоговый статус (шаг 9).
+        await mark_matched(self.session, tx)
         doc = OnecDocument(
             idempotency_key=key,
             doc_type=OnecDocType.DISPOSAL,
             transaction_id=tx.id,
-            payload=build_disposal(tx, rate, allocations, result),
+            payload=build_disposal(
+                tx, rate, allocations, result,
+                aml=await aml_summary(self.session, tx),
+            ),
         )
         self.session.add(doc)
-        # Замыкание регламента (шаг 6): связанное ожидание sent → matched.
-        await mark_matched(self.session, tx)
         return doc
 
     async def _process_fee(self, tx: Transaction) -> OnecDocument | None:

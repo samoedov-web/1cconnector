@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # конфигурация; до подключения реального провайдера — мок с фикстурами.
     aml_source_id: str = "mock-aml"
     aml_fixtures_path: str = "fixtures/aml.json"
+    # Реальный провайдер (aml_source_id="crystal"): ключ из кабинета
+    # клиента; base_url пустой — дефолт адаптера.
+    aml_api_key: str = ""
+    aml_base_url: str = ""
     # Пороги решений по risk_score (шаг 3 регламента): 0..approved — можно
     # отправлять; ..review — решение комплаенс-офицера; выше — запрещено.
     aml_approved_max_score: int = 30
