@@ -421,6 +421,10 @@ class ExpectedPayment(Base):
         default=ExpectedPaymentStatus.PENDING_AML,
     )
     aml_screening_id: Mapped[int | None] = mapped_column(ForeignKey("aml_screenings.id"))
+    # Решение комплаенс-офицера по aml_review (шаг 4 регламента);
+    # полная запись решения — в аудит-логе.
+    decided_by: Mapped[str] = mapped_column(String(128), default="")
+    decision_note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
@@ -476,6 +480,8 @@ class Role(enum.StrEnum):
     ADMIN = "admin"
     OPERATOR = "operator"  # разбор нераспознанных транзакций
     AUDITOR = "auditor"  # только чтение
+    COMPLIANCE = "compliance"  # решения по aml_review (шаг 4 регламента)
+    TREASURER = "treasurer"  # видит «одобрено к отправке» (шаг 5 регламента)
 
 
 class User(Base):

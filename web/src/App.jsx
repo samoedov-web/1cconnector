@@ -7,6 +7,7 @@ import Transactions from './pages/Transactions'
 import Wallets from './pages/Wallets'
 import Counterparties from './pages/Counterparties'
 import Accounting from './pages/Accounting'
+import Aml from './pages/Aml'
 import Users from './pages/Users'
 
 const NAV = [
@@ -16,6 +17,7 @@ const NAV = [
   { to: '/wallets', label: 'Кошельки' },
   { to: '/counterparties', label: 'Контрагенты' },
   { to: '/accounting', label: 'Учёт' },
+  { to: '/aml', label: 'AML-контроль' },
   { to: '/users', label: 'Пользователи', adminOnly: true },
 ]
 
@@ -68,6 +70,7 @@ export default function App() {
       <Route path="/wallets" element={<Protected><Wallets /></Protected>} />
       <Route path="/counterparties" element={<Protected><Counterparties /></Protected>} />
       <Route path="/accounting" element={<Protected><Accounting /></Protected>} />
+      <Route path="/aml" element={<Protected><Aml /></Protected>} />
       <Route path="/users" element={<Protected><Users /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

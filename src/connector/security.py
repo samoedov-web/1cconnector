@@ -140,4 +140,8 @@ def require_roles(*roles: Role):
 # Готовые зависимости под матрицу доступа панели.
 require_admin = require_roles(Role.ADMIN)
 require_operator = require_roles(Role.ADMIN, Role.OPERATOR)
-require_reader = require_roles(Role.ADMIN, Role.OPERATOR, Role.AUDITOR)
+# Решение по AML-разбору (шаг 4 регламента) — комплаенс-офицер или админ.
+require_compliance = require_roles(Role.ADMIN, Role.COMPLIANCE)
+require_reader = require_roles(
+    Role.ADMIN, Role.OPERATOR, Role.AUDITOR, Role.COMPLIANCE, Role.TREASURER
+)
