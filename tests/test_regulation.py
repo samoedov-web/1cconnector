@@ -171,7 +171,8 @@ async def test_fns_notification_data_xml_and_html(session):
     assert data["basis"]["unk"] == "26030012/1481/0000/9/1"
     assert data["basis"]["kvvo"] == "12060"
     assert Decimal(data["valuation"]["amount_rub"]) == Decimal(80000)
-    assert data["aml"]["status"] == "not_performed"  # честно до AML-слоя
+    # Входящий платёж: регламент охватывает исходящие (вопрос 7.2 aml-спеки).
+    assert data["aml"]["status"] == "not_required"
 
     xml = fns_notification_xml(data)
     assert "УведомлениеРасчетЦВ" in xml

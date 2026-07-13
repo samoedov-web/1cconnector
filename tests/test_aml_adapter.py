@@ -56,8 +56,9 @@ def test_mock_registered_in_aml_family(fixtures_path):
 
 
 def test_unknown_provider_is_explicit_error():
-    with pytest.raises(LookupError, match="crystal"):
-        create_aml_source("crystal")
+    # «crystal» с фазы 5 зарегистрирован — неизвестным остаётся выдуманный id.
+    with pytest.raises(LookupError, match="no-such-provider"):
+        create_aml_source("no-such-provider")
 
 
 # --- Скрининг --------------------------------------------------------------------

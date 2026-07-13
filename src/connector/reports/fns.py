@@ -67,10 +67,9 @@ async def fns_notification_data(session: AsyncSession, tx_id: int) -> dict | Non
             "counterparty": primary.get("counterparty") or "",
             "purpose": _purpose(primary),
         },
-        # Результат AML появится здесь после реализации specs/aml-adapter.md;
-        # честный статус вместо пустышки.
-        "aml": {"status": "not_performed",
-                "note": "AML-слой не подключён (specs/aml-adapter.md)"},
+        # Результат AML-проверки адреса получателя (шаг 11 регламента):
+        # тот же блок, что в акте по платежу и документе 1С.
+        "aml": act["aml"],
         "immutability": act["immutability"],
     }
 
@@ -121,8 +120,17 @@ def fns_notification_xml(data: dict) -> str:
         "Контрагент": basis["counterparty"],
         "НазначениеПлатежа": basis["purpose"],
     })
-    ET.SubElement(operation, "AML", {
-        "Статус": data["aml"]["status"], "Примечание": data["aml"]["note"],
-    })
+    aml = data["aml"]
+    aml_attrs = {"Статус": aml["status"], "Примечание": aml.get("note", "")}
+    if aml["status"] == "performed":
+        aml_attrs |= {
+            "Скор": str(aml["risk_score"]) if aml["risk_score"] is not None else "",
+            "Категории": ", ".join(aml["categories"]),
+            "Провайдер": aml["provider"],
+            "ДатаПроверки": aml["screened_at"] or "",
+            "СтатусПлатежа": aml["payment_status"],
+            "РешениеКомплаенса": aml["decided_by"],
+        }
+    ET.SubElement(operation, "AML", aml_attrs)
     raw = ET.tostring(root, encoding="unicode")
     return minidom.parseString(raw).toprettyxml(indent="  ", encoding=None)

@@ -29,6 +29,7 @@ from connector.aml.base import AmlAdapter
 from connector.aml.store import last_screening, store_screening
 from connector.config import settings
 from connector.models import (
+    AmlScreening,
     AuditLog,
     CounterpartyAddress,
     Direction,
@@ -46,15 +47,20 @@ log = logging.getLogger("connector.aml")
 def default_aml_adapter() -> AmlAdapter:
     """Провайдер скрининга из настроек (реестр aml-источников).
 
-    Импорт регистрирует мок-провайдера; реальный (фаза 5) подключится
-    тем же реестром по settings.aml_source_id.
+    Импорты регистрируют провайдеров; выбор — конфигурацией
+    (aml_source_id: mock-aml | crystal), не кодом. Лишние ключи общего
+    конфига каждая фабрика игнорирует.
     """
+    import connector.aml.crystal_adapter  # noqa: F401
     import connector.aml.mock_adapter  # noqa: F401
 
     from connector.sources.registry import create_aml_source
 
     return create_aml_source(
-        settings.aml_source_id, fixtures_path=settings.aml_fixtures_path
+        settings.aml_source_id,
+        fixtures_path=settings.aml_fixtures_path,
+        api_key=settings.aml_api_key,
+        base_url=settings.aml_base_url,
     )
 
 TRANSITIONS: dict[EPS, set[EPS]] = {
@@ -257,6 +263,51 @@ async def mark_matched(session: AsyncSession, tx: Transaction) -> None:
     )
     if payment is not None:
         transition(payment, EPS.MATCHED)
+
+
+# --- Фаза 5: блок AML для документа 1С, акта и уведомления ФНС -----------------
+
+
+async def aml_summary(session: AsyncSession, tx: Transaction) -> dict:
+    """Результат AML-проверки по транзакции (шаги 9, 11, 13 регламента).
+
+    Единый блок для проекта документа 1С, акта по платежу и уведомления
+    ФНС — аудит-цепочка «инвойс → адрес → скор → решение → tx_hash»
+    читается из любого из них. Статусы:
+    - performed     — исходящая связана с ожидаемым платежом, скрининг был;
+    - not_performed — исходящая вне регламента (нет связанного ожидания);
+    - not_required  — входящая: регламент охватывает только исходящие
+      (скрининг входящих — вопрос 7.2 спеки).
+    """
+    if tx.direction != Direction.OUT:
+        return {"status": "not_required",
+                "note": "входящий платёж: регламент охватывает исходящие"}
+    payment = await session.scalar(
+        select(ExpectedPayment).where(ExpectedPayment.transaction_id == tx.id)
+    )
+    if payment is None:
+        return {"status": "not_performed",
+                "note": "исходящая не связана с одобренным ожидаемым платежом"
+                        " (отправка вне регламента)"}
+    screening = (
+        await session.get(AmlScreening, payment.aml_screening_id)
+        if payment.aml_screening_id is not None
+        else None
+    )
+    return {
+        "status": "performed",
+        "note": "",
+        "payment_status": payment.status.value,
+        "invoice_id": payment.invoice_id,
+        "risk_score": screening.risk_score if screening else None,
+        "categories": list(screening.categories) if screening else [],
+        "provider": screening.source_id if screening else "",
+        "screened_at": (
+            screening.screened_at.isoformat() if screening else None
+        ),
+        "decided_by": payment.decided_by,
+        "decision_note": payment.decision_note,
+    }
 
 
 # --- Фаза 4: ре-скрининг по расписанию ----------------------------------------

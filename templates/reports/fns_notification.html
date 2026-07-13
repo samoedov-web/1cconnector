@@ -58,7 +58,16 @@
 
 <div class="section">5. Проверка AML</div>
 <table>
+  {% if aml.status == "performed" %}
+  <tr><th>Статус</th><td>проведена до отправки средств</td></tr>
+  <tr><th>Оценка риска (0–100)</th><td>{{ aml.risk_score if aml.risk_score is not none else "—" }}{% if aml.categories %} ({{ aml.categories | join(", ") }}){% endif %}</td></tr>
+  <tr><th>Провайдер / момент проверки</th><td>{{ aml.provider or "—" }} / {{ aml.screened_at or "—" }}</td></tr>
+  {% if aml.decided_by %}
+  <tr><th>Решение комплаенс-офицера</th><td>{{ aml.decided_by }}{% if aml.decision_note %}: {{ aml.decision_note }}{% endif %}</td></tr>
+  {% endif %}
+  {% else %}
   <tr><th>Статус</th><td>{{ aml.status }}{% if aml.note %} — {{ aml.note }}{% endif %}</td></tr>
+  {% endif %}
 </table>
 
 <p style="font-size:9pt">Первичные данные операции получены из публичного блокчейна в режиме

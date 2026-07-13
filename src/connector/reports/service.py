@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from connector.aml.flow import aml_summary
 from connector.models import (
     Contract,
     Counterparty,
@@ -127,6 +128,9 @@ async def payment_act_data(session: AsyncSession, tx_id: int) -> dict | None:
             "as_of": rate.as_of.isoformat(),
         },
         "allocations": await _allocations(session, tx.id),
+        # Результат AML-проверки адреса получателя (шаг 13 регламента):
+        # акт несёт всю аудит-цепочку осмотрительности.
+        "aml": await aml_summary(session, tx),
         "immutability": _immutability_block(tx),
     }
 
