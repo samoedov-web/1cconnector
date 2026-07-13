@@ -12,9 +12,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from connector.aml.base import AmlAdapter
     from connector.indexer.base import ChainAdapter
 
 _chain_sources: dict[str, type["ChainAdapter"]] = {}
+_aml_sources: dict[str, type["AmlAdapter"]] = {}
 
 
 def register_chain_source(network_code: str):
@@ -43,3 +45,29 @@ def create_chain_source(
             f"доступны: {', '.join(chain_source_codes()) or '—'}"
         ) from None
     return cls.from_config(url, api_key=api_key, source_name=source_name)
+
+
+def register_aml_source(source_id: str):
+    """Зарегистрировать AML-провайдера под его id (specs/aml-adapter.md)."""
+
+    def decorator(cls):
+        _aml_sources[source_id] = cls
+        return cls
+
+    return decorator
+
+
+def aml_source_codes() -> list[str]:
+    return sorted(_aml_sources)
+
+
+def create_aml_source(source_id: str, **config) -> "AmlAdapter":
+    """Создать AML-адаптер; LookupError для незарегистрированного id."""
+    try:
+        cls = _aml_sources[source_id]
+    except KeyError:
+        raise LookupError(
+            f"Нет зарегистрированного AML-провайдера «{source_id}»; "
+            f"доступны: {', '.join(aml_source_codes()) or '—'}"
+        ) from None
+    return cls.from_config(**config)
