@@ -352,6 +352,33 @@ class Revaluation(Base):
     asset: Mapped[Asset] = relationship()
 
 
+# --- AML (specs/aml-adapter.md, фаза 1) --------------------------------------
+
+
+class AmlScreening(Base):
+    """Результат AML-скрининга адреса — неизменяемая первичка.
+
+    История скринингов append-only (повторная проверка того же адреса —
+    новая запись): доказательная база осмотрительности «мы проверяли и вот
+    что видели на тот момент». raw + checksum — по схеме журнала
+    неизменяемости; на PostgreSQL защищено триггерами.
+    """
+
+    __tablename__ = "aml_screenings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64))  # какой провайдер
+    network: Mapped[str] = mapped_column(String(32))
+    address: Mapped[str] = mapped_column(String(128), index=True)
+    risk_score: Mapped[int] = mapped_column(Integer)  # 0–100
+    categories: Mapped[list] = mapped_column(JSON, default=list)
+    provider_ref: Mapped[str] = mapped_column(String(128), default="")
+    raw: Mapped[dict] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))  # SHA-256 raw
+    screened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 # --- Обмен с 1С ------------------------------------------------------------
 
 

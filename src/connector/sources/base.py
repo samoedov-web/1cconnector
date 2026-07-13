@@ -52,7 +52,9 @@ class DataSource(ABC):
     def meta(self) -> SourceMeta:
         return SourceMeta(
             id=self.source_name or type(self).__name__,
-            name=type(self).__name__,
+            # Человекочитаемое имя адаптера (п. 4.3 спеки) — display_name
+            # у класса, иначе имя класса.
+            name=getattr(self, "display_name", type(self).__name__),
             family=self.family,
         )
 

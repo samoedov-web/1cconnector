@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # Webhook алертов мониторинга (POST JSON); пусто — только журнал в БД.
     alert_webhook_url: str = ""
 
+    # --- AML (specs/aml-adapter.md) ---
+    # Провайдер скрининга адресов (id в реестре aml-источников) и его
+    # конфигурация; до подключения реального провайдера — мок с фикстурами.
+    aml_source_id: str = "mock-aml"
+    aml_fixtures_path: str = "fixtures/aml.json"
+
     # --- Лицензирование (п. 10 ТЗ) ---
     # Файл лицензии (выпускается scripts/license_tool.py вендора);
     # отсутствует — деморежим (1 юрлицо, 1 кошелёк, без обновлений форм).
