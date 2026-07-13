@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 
-const ROLE_LABEL = { admin: 'администратор', operator: 'оператор', auditor: 'аудитор (чтение)' }
+const ROLE_LABEL = {
+  admin: 'администратор',
+  operator: 'оператор',
+  auditor: 'аудитор (чтение)',
+  compliance: 'комплаенс-офицер',
+  treasurer: 'казначей',
+}
 
 export default function Users() {
   const [users, setUsers] = useState(null)
