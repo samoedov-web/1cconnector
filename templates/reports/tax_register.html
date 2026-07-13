@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Налоговый регистр операций с цифровой валютой</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 11pt; margin: 2cm 1.5cm; color: #000; }
+  h1 { font-size: 14pt; text-align: center; margin-bottom: 0.2em; }
+  .subtitle { text-align: center; font-size: 10pt; margin-bottom: 1.5em; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  th, td { border: 1px solid #000; padding: 3px 5px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  td.num { text-align: right; }
+  .mono { font-family: "Courier New", monospace; font-size: 8pt; word-break: break-all; }
+  .totals { margin-top: 1em; font-size: 11pt; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+
+<h1>НАЛОГОВЫЙ РЕГИСТР<br>операций с цифровой валютой</h1>
+<p class="subtitle">Период: {{ period.from }} — {{ period.to }} · сформирован {{ generated_at }}</p>
+
+<table>
+  <tr>
+    <th>№</th><th>Дата операции (UTC)</th><th>Операция</th><th>Актив</th>
+    <th>Количество</th><th>Доход, ₽</th><th>Расход, ₽</th><th>Результат, ₽</th>
+    <th>Хэш транзакции</th>
+  </tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td>{{ row.date }}</td>
+    <td>{{ {"receipt": "поступление", "disposal": "выбытие", "fee": "комиссия сети"}[row.kind] }}</td>
+    <td>{{ row.asset }}</td>
+    <td class="num">{{ row.quantity }}</td>
+    <td class="num">{{ row.income_rub or "—" }}</td>
+    <td class="num">{{ row.cost_rub or "—" }}</td>
+    <td class="num">{{ row.result_rub or "—" }}</td>
+    <td class="mono">{{ row.tx_hash }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<p class="totals">
+  Доходы: {{ totals.income_rub }} ₽ ·
+  Расходы (себестоимость + комиссии): {{ totals.expense_rub }} ₽ ·
+  <b>Налоговая база (результат): {{ totals.result_rub }} ₽</b>
+</p>
+
+<p style="font-size:9pt">Рублёвая оценка выполнена по курсам, зафиксированным на момент
+финальности каждой операции (источники — по учётной политике); себестоимость выбытий —
+метод ФИФО по партиям поступления. Каждая строка подтверждается неизменяемой первичной
+записью (SHA-256 сырого ответа ноды хранится в системе) и доступна для независимой
+сверки по хэшу транзакции.</p>
+
+</body>
+</html>
