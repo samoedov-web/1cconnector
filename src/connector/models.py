@@ -421,6 +421,9 @@ class ExpectedPayment(Base):
         default=ExpectedPaymentStatus.PENDING_AML,
     )
     aml_screening_id: Mapped[int | None] = mapped_column(ForeignKey("aml_screenings.id"))
+    # Исходящая транзакция, закрывшая ожидание (шаги 5–6 регламента):
+    # индексер связывает по адресу и сумме ± tolerance → статус sent.
+    transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"))
     # Решение комплаенс-офицера по aml_review (шаг 4 регламента);
     # полная запись решения — в аудит-логе.
     decided_by: Mapped[str] = mapped_column(String(128), default="")
@@ -432,6 +435,7 @@ class ExpectedPayment(Base):
 
     invoice: Mapped[Invoice] = relationship()
     aml_screening: Mapped["AmlScreening | None"] = relationship()
+    transaction: Mapped["Transaction | None"] = relationship()
 
 
 # --- Обмен с 1С ------------------------------------------------------------

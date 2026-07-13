@@ -30,6 +30,12 @@ from connector.indexer.service import IndexerService, merge_sources
 import connector.indexer.tron  # noqa: F401
 from connector import license as license_module
 from connector.alerts import send_alert
+from connector.aml.flow import (
+    default_aml_adapter,
+    link_outgoing_payments,
+    rescreen_due,
+    rescreen_known_addresses,
+)
 from connector.models import Asset, Base, Network, Wallet, utcnow
 from connector.pipeline import TransactionPipeline
 from connector.rates.service import RateService
@@ -208,6 +214,15 @@ async def poll_network(
                 )
                 # Комиссии исходящих — отдельная статья расходов (п. 6 ТЗ).
                 await service.enrich_fees(created, sources[0])
+                # Шаги 5–6 регламента: связывание исходящих с одобренными
+                # ожиданиями; отправка без одобрения — алерт «вне регламента».
+                linked = await link_outgoing_payments(session, created, network.code)
+                if linked:
+                    log.info(
+                        "Сеть %s: связано ожидаемых платежей %d",
+                        network.code,
+                        len(linked),
+                    )
             # Курсор двигается, только если ответили все источники: иначе
             # транзакции из недоступного источника выпадут из окна навсегда.
             if len(fetched) == len(sources):
@@ -254,6 +269,7 @@ async def main() -> None:
         return
     rate_service = build_rate_service()
     last_license_status: str | None = None
+    last_rescreen: datetime | None = None
     while True:
         # Лицензия: grace и демо синхронизируют, expired/invalid — только чтение.
         license_state = license_module.current_state()
@@ -293,6 +309,20 @@ async def main() -> None:
                 await poll_network(network, sources, rate_service)
             except Exception:
                 log.exception("Сбой цикла индексации сети %s", network.code)
+        # Ре-скрининг справочника адресов по расписанию (фаза 4 aml-спеки):
+        # смена скора → алерт, одобрение отзывается (expired).
+        now = utcnow()
+        if rescreen_due(last_rescreen, now, settings.aml_rescreen_hours):
+            last_rescreen = now
+            try:
+                async with SessionFactory() as session:
+                    screened = await rescreen_known_addresses(
+                        session, default_aml_adapter()
+                    )
+                    await session.commit()
+                log.info("AML ре-скрининг: адресов проверено %d", screened)
+            except Exception:
+                log.exception("Сбой ре-скрининга AML")
         await asyncio.sleep(settings.indexer_poll_interval)
 
 

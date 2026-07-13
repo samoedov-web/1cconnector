@@ -17,12 +17,14 @@ from sqlalchemy.orm import selectinload
 from connector.db import get_session
 from connector.models import (
     Direction,
+    ExpectedPayment,
     Match,
     Network,
     OnecDocument,
     RateSnapshot,
     Transaction,
     TxStatus,
+    Wallet,
 )
 from connector.reports.service import payment_act_data
 from connector.security import CurrentUser, require_reader
@@ -161,6 +163,29 @@ async def transaction_card(
         )
         is not None
     )
+    # Пометка регламента (фаза 4 aml-спеки): исходящая либо связана с
+    # одобренным ожиданием, либо помечается «вне регламента»; переводы на
+    # собственные кошельки — внутренние перемещения.
+    tx = await session.get(Transaction, tx_id)
+    aml = None
+    if tx is not None and tx.direction == Direction.OUT:
+        payment = await session.scalar(
+            select(ExpectedPayment).where(ExpectedPayment.transaction_id == tx_id)
+        )
+        if payment is not None:
+            aml = {
+                "linked": True,
+                "status": payment.status.value,
+                "expected_payment_id": payment.id,
+            }
+        else:
+            internal = await session.scalar(
+                select(Wallet.id).where(
+                    Wallet.network_id == tx.network_id,
+                    Wallet.address == tx.to_address,
+                )
+            )
+            aml = {"linked": False, "internal": internal is not None}
     return data | {
         "id": tx_id,
         "matches": [
@@ -183,4 +208,5 @@ async def transaction_card(
             for d in docs
         ],
         "has_rate_snapshot": has_rate,
+        "aml": aml,
     }

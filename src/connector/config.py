@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # отправлять; ..review — решение комплаенс-офицера; выше — запрещено.
     aml_approved_max_score: int = 30
     aml_review_max_score: int = 70
+    # Ре-скрининг справочника адресов по расписанию (шаг 3.3 aml-спеки);
+    # 0 — отключён. Смена статуса по порогам → алерт.
+    aml_rescreen_hours: int = 24
 
     # --- Лицензирование (п. 10 ТЗ) ---
     # Файл лицензии (выпускается scripts/license_tool.py вендора);
