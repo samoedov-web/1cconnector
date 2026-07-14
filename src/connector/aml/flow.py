@@ -129,6 +129,10 @@ async def ensure_expected_payment(
         )
         session.add(payment)
         await session.flush()
+    if payment.status == EPS.EXPIRED:
+        # Одобрение истекло (48 ч, решение владельца) — синхронизация
+        # инвойса запускает проверку заново.
+        transition(payment, EPS.PENDING_AML)
     if payment.status != EPS.PENDING_AML:
         return payment  # уже проверен (или решён комплаенсом)
 
@@ -263,6 +267,101 @@ async def mark_matched(session: AsyncSession, tx: Transaction) -> None:
     )
     if payment is not None:
         transition(payment, EPS.MATCHED)
+
+
+# --- Решения владельца (2026-07-14): срок одобрения и таймер отправки ----------
+
+
+async def expire_stale_approvals(
+    session: AsyncSession, now: datetime | None = None
+) -> list[ExpectedPayment]:
+    """Отозвать одобрения старше aml_approval_ttl_hours (48 ч — решение
+    владельца, вопрос 7.1 спеки).
+
+    Платёж с отметкой казначея «отправил» не истекает: средства уже в
+    пути в пределах срока одобрения, его контролирует таймер сценария 4.
+    Повторная синхронизация инвойса переведёт expired → pending_aml
+    и перескринит адрес.
+    """
+    if settings.aml_approval_ttl_hours <= 0:
+        return []
+    now = now or datetime.now(timezone.utc)
+    deadline = now - timedelta(hours=settings.aml_approval_ttl_hours)
+    stale = (
+        (
+            await session.execute(
+                select(ExpectedPayment).where(
+                    ExpectedPayment.status == EPS.AML_APPROVED,
+                    ExpectedPayment.status_changed_at < deadline,
+                    ExpectedPayment.sent_marked_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for payment in stale:
+        transition(payment, EPS.EXPIRED)
+        session.add(AuditLog(
+            actor="indexer",
+            action="aml_approval_expired",
+            entity="expected_payment",
+            entity_id=str(payment.id),
+            details={"to_address": payment.to_address,
+                     "ttl_hours": settings.aml_approval_ttl_hours},
+        ))
+        await send_alert(
+            session, "warning",
+            "AML: одобрение истекло — требуется повторная проверка адреса",
+            {"expected_payment_id": payment.id,
+             "to_address": payment.to_address,
+             "ttl_hours": settings.aml_approval_ttl_hours},
+        )
+    await session.flush()
+    return list(stale)
+
+
+async def check_sent_timeouts(
+    session: AsyncSession, now: datetime | None = None
+) -> list[ExpectedPayment]:
+    """Таймер сценария 4 регламента (кнопка «отправил» — решение владельца).
+
+    Казначей отметил отправку, а индексер не обнаружил транзакцию за
+    aml_sent_timeout_minutes (30 мин) — алерт казначею: проверить вручную
+    (обозреватель сети, статус кошелька). Алерт поднимается один раз;
+    обнаружение транзакции закрывает вопрос само (статус станет sent).
+    """
+    if settings.aml_sent_timeout_minutes <= 0:
+        return []
+    now = now or datetime.now(timezone.utc)
+    deadline = now - timedelta(minutes=settings.aml_sent_timeout_minutes)
+    overdue = (
+        (
+            await session.execute(
+                select(ExpectedPayment).where(
+                    ExpectedPayment.status == EPS.AML_APPROVED,
+                    ExpectedPayment.sent_marked_at.is_not(None),
+                    ExpectedPayment.sent_marked_at < deadline,
+                    ExpectedPayment.sent_timeout_alerted.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for payment in overdue:
+        payment.sent_timeout_alerted = True
+        await send_alert(
+            session, "warning",
+            "Отправка отмечена, но транзакция не обнаружена — проверьте вручную",
+            {"expected_payment_id": payment.id,
+             "to_address": payment.to_address,
+             "marked_by": payment.sent_marked_by,
+             "marked_at": payment.sent_marked_at.isoformat(),
+             "timeout_minutes": settings.aml_sent_timeout_minutes},
+        )
+    await session.flush()
+    return list(overdue)
 
 
 # --- Фаза 5: блок AML для документа 1С, акта и уведомления ФНС -----------------

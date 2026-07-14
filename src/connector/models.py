@@ -428,6 +428,13 @@ class ExpectedPayment(Base):
     # полная запись решения — в аудит-логе.
     decided_by: Mapped[str] = mapped_column(String(128), default="")
     decision_note: Mapped[str] = mapped_column(Text, default="")
+    # Отметка казначея «отправил» (решение владельца по сценарию 4):
+    # точка отсчёта таймера «транзакция не обнаружена за N минут»;
+    # сам статус меняет только индексер, обнаружив транзакцию.
+    sent_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_marked_by: Mapped[str] = mapped_column(String(128), default="")
+    # Алерт по таймеру уже поднят (чтобы не дублировать каждый цикл).
+    sent_timeout_alerted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow

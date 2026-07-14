@@ -31,7 +31,9 @@ import connector.indexer.tron  # noqa: F401
 from connector import license as license_module
 from connector.alerts import send_alert
 from connector.aml.flow import (
+    check_sent_timeouts,
     default_aml_adapter,
+    expire_stale_approvals,
     link_outgoing_payments,
     rescreen_due,
     rescreen_known_addresses,
@@ -309,6 +311,22 @@ async def main() -> None:
                 await poll_network(network, sources, rate_service)
             except Exception:
                 log.exception("Сбой цикла индексации сети %s", network.code)
+        # Таймеры регламента (решения владельца 2026-07-14): одобрение
+        # истекает через 48 ч; «отправил» без обнаружения за 30 мин — алерт.
+        try:
+            async with SessionFactory() as session:
+                expired = await expire_stale_approvals(session)
+                overdue = await check_sent_timeouts(session)
+                await session.commit()
+            if expired:
+                log.warning("AML: одобрений истекло %d", len(expired))
+            if overdue:
+                log.warning(
+                    "AML: отправок без обнаружения %d — алерт казначею",
+                    len(overdue),
+                )
+        except Exception:
+            log.exception("Сбой таймеров AML")
         # Ре-скрининг справочника адресов по расписанию (фаза 4 aml-спеки):
         # смена скора → алерт, одобрение отзывается (expired).
         now = utcnow()
