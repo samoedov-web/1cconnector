@@ -21,7 +21,7 @@ function Score({ value }) {
   return <span className={`badge ${cls}`}>{value}</span>
 }
 
-function Row({ p, onDecide, canDecide }) {
+function Row({ p, onDecide, canDecide, onMarkSent, canMarkSent }) {
   const [note, setNote] = useState('')
   const [deciding, setDeciding] = useState(false)
   return (
@@ -37,6 +37,11 @@ function Row({ p, onDecide, canDecide }) {
         {p.decided_by && (
           <div className="muted" style={{ fontSize: 11 }}>
             {p.decided_by}{p.decision_note && `: ${p.decision_note}`}
+          </div>
+        )}
+        {p.sent_marked_at && (
+          <div className="muted" style={{ fontSize: 11 }}>
+            отправил {p.sent_marked_by} · {new Date(p.sent_marked_at).toLocaleString('ru-RU')}
           </div>
         )}
       </td>
@@ -59,12 +64,15 @@ function Row({ p, onDecide, canDecide }) {
             <button className="small" onClick={() => setDeciding(true)}>Решить</button>
           )
         )}
+        {canMarkSent && p.status === 'aml_approved' && !p.sent_marked_at && (
+          <button className="small" onClick={() => onMarkSent(p.id)}>Отправил ✓</button>
+        )}
       </td>
     </tr>
   )
 }
 
-function Table({ title, rows, onDecide, canDecide, emptyText }) {
+function Table({ title, rows, onDecide, canDecide, onMarkSent, canMarkSent, emptyText }) {
   return (
     <>
       <h2>{title}</h2>
@@ -77,7 +85,8 @@ function Table({ title, rows, onDecide, canDecide, emptyText }) {
         </thead>
         <tbody>
           {rows.map((p) => (
-            <Row key={p.id} p={p} onDecide={onDecide} canDecide={canDecide} />
+            <Row key={p.id} p={p} onDecide={onDecide} canDecide={canDecide}
+              onMarkSent={onMarkSent} canMarkSent={canMarkSent} />
           ))}
           {rows.length === 0 && (
             <tr><td colSpan={7} className="muted">{emptyText}</td></tr>
@@ -94,6 +103,7 @@ export default function Aml() {
   const [notice, setNotice] = useState(null)
   const role = getAuth()?.role
   const canDecide = ['admin', 'compliance'].includes(role)
+  const canMarkSent = ['admin', 'treasurer'].includes(role)
 
   const load = useCallback(() => {
     api('/api/v1/aml/payments').then(setPayments).catch((e) => setError(e.message))
@@ -107,6 +117,17 @@ export default function Aml() {
         method: 'POST', body: { action, note },
       })
       setNotice(`Решение записано: ${STATUS_RU[r.status]}`)
+      load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const markSent = async (id) => {
+    setError(null); setNotice(null)
+    try {
+      await api(`/api/v1/aml/payments/${id}/mark-sent`, { method: 'POST', body: {} })
+      setNotice('Отправка отмечена: если транзакция не будет обнаружена за 30 минут — придёт алерт')
       load()
     } catch (err) {
       setError(err.message)
@@ -138,6 +159,7 @@ export default function Aml() {
         emptyText="Нет платежей, ожидающих решения" />
       <Table title={`Одобрено к отправке (${approved.length})`} rows={approved}
         onDecide={decide} canDecide={false}
+        onMarkSent={markSent} canMarkSent={canMarkSent}
         emptyText="Нет одобренных платежей" />
       <Table title="Остальные" rows={rest} onDecide={decide} canDecide={false}
         emptyText="Пусто" />

@@ -142,6 +142,8 @@ require_admin = require_roles(Role.ADMIN)
 require_operator = require_roles(Role.ADMIN, Role.OPERATOR)
 # Решение по AML-разбору (шаг 4 регламента) — комплаенс-офицер или админ.
 require_compliance = require_roles(Role.ADMIN, Role.COMPLIANCE)
+# Отметка «отправил» (шаг 5 регламента, сценарий 4) — казначей или админ.
+require_treasurer = require_roles(Role.ADMIN, Role.TREASURER)
 require_reader = require_roles(
     Role.ADMIN, Role.OPERATOR, Role.AUDITOR, Role.COMPLIANCE, Role.TREASURER
 )
