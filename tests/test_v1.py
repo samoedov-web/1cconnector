@@ -174,6 +174,22 @@ async def test_tax_register_income_disposal_and_totals(session, world):
     assert data["rows"][0]["raw_response_sha256"]  # журнал неизменяемости
 
 
+async def test_revaluation_never_enters_tax_register(session, world):
+    """Ст. 282.3 НК: переоценка — бухгалтерская, налоговую базу не меняет.
+
+    Регистр до и после переоценки идентичен: ни новых строк, ни изменения
+    итогов; вид строк ограничен реализованными операциями.
+    """
+    before = await tax_register_data(session, dt(1, 6), dt(28, 8))
+    [rev] = await run_revaluation(session, world["rates"], dt(31, month=7))
+    assert rev.difference_rub != 0  # переоценка реально состоялась
+    after = await tax_register_data(session, dt(1, 6), dt(28, 8))
+
+    assert after["rows"] == before["rows"]
+    assert after["totals"] == before["totals"]
+    assert {r["kind"] for r in after["rows"]} <= {"receipt", "disposal", "fee"}
+
+
 # --- Акт сверки --------------------------------------------------------------------
 
 
