@@ -80,6 +80,18 @@ def build_adapters() -> dict[str, list[ChainAdapter]]:
     return adapters
 
 
+def single_source_networks(adapters: dict[str, list[ChainAdapter]]) -> list[str]:
+    """Сети, работающие на одном источнике данных.
+
+    Два независимых источника на сеть — требование конфигурации (п. 3 ТЗ):
+    кросс-проверка и признак cross_checked работают только при двух.
+    Одиночный источник допустим (дев-контур, деградация), но не должен
+    быть тихим — воркер поднимает предупреждение (находка аудита
+    whitepaper: «минимум два источника» не принуждался кодом).
+    """
+    return sorted(code for code, sources in adapters.items() if len(sources) < 2)
+
+
 def scan_window(
     backfill_from: datetime | None,
     last_scanned_block: int | None,
@@ -269,6 +281,21 @@ async def main() -> None:
     if not adapters:
         log.error("Не настроен ни один источник данных (TRON_SOURCE_*/ETH_SOURCE_*)")
         return
+    degraded = single_source_networks(adapters)
+    if degraded:
+        log.warning(
+            "Сети %s работают на ОДНОМ источнике — кросс-проверка недоступна, "
+            "настройте второй источник (*_SOURCE_2_URL)",
+            ", ".join(degraded),
+        )
+        async with SessionFactory() as session:
+            await send_alert(
+                session, "warning",
+                "Кросс-проверка недоступна: сеть работает на одном источнике",
+                {"networks": degraded,
+                 "action": "настройте второй источник (*_SOURCE_2_URL)"},
+            )
+            await session.commit()
     rate_service = build_rate_service()
     last_license_status: str | None = None
     last_rescreen: datetime | None = None

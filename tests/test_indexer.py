@@ -183,3 +183,13 @@ async def test_ingest_marks_cross_checked_and_upgrades_existing(session, world):
     assert created_again == []
     tx = await session.scalar(select(Transaction).where(Transaction.tx_hash == "aa"))
     assert tx.cross_checked is True
+
+
+def test_single_source_networks_flagged_for_alert():
+    """Два источника — требование конфигурации: одиночный не должен быть тихим
+    (находка аудита whitepaper — «минимум два источника» не принуждался кодом)."""
+    from connector.worker import single_source_networks
+
+    adapters = {"tron": [object()], "ethereum": [object(), object()]}
+    assert single_source_networks(adapters) == ["tron"]
+    assert single_source_networks({"tron": [object(), object()]}) == []

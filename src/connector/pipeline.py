@@ -264,7 +264,13 @@ class TransactionPipeline:
                     "contract_ref": contract.onec_ref if contract else "",
                     "contract_id": m.contract_id,
                     "contract_number": contract.number if contract else "",
-                    "kvvo": contract.kvvo if contract else "",  # шаг 9 регламента
+                    # УНК и КВВО — шаг 9 регламента (валютный контроль);
+                    # УНК был только в акте/уведомлении — найдено приёмочным
+                    # тестом из whitepaper (test_acceptance_whitepaper).
+                    "contract_registration_number": (
+                        contract.registration_number if contract else ""
+                    ),
+                    "kvvo": contract.kvvo if contract else "",
                     "invoice_ref": invoice.onec_ref if invoice else "",
                     "invoice_id": m.invoice_id,
                     "invoice_number": invoice.number if invoice else "",
