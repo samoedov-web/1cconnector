@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     # транзакция не обнаружена за N минут → алерт; 0 — отключён.
     aml_sent_timeout_minutes: int = 30
 
+    # --- Политики платежей (G6) ---
+    # Блокировка сценариев платежей: domestic_payment — внутренний платёж (ACC-18-050)
+    blocked_payment_scenarios: list[str] = Field(default_factory=list)  # e.g. ["domestic_payment"]
+    # Дата доступности прямого маршрута (ACC-18-051): прямой маршрут доступен с 1.09.2026
+    direct_route_available_from: str = "2026-09-01"  # ISO date
+    # Внутренние таймеры (не ст. 45): 48 ч для внутренних проверок, 30 мин — SLA (ACC-18-052)
+    internal_check_hours: int = 48
+    internal_sla_minutes: int = 30
+
     # --- Лицензирование (п. 10 ТЗ) ---
     # Файл лицензии (выпускается scripts/license_tool.py вендора);
     # отсутствует — деморежим (1 юрлицо, 1 кошелёк, без обновлений форм).

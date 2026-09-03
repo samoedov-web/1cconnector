@@ -35,6 +35,7 @@ from connector.models import (
     CounterpartyAddress,
     Invoice,
     Network,
+    PaymentRoute,
 )
 from connector.onec.api import require_active_license, require_exchange_token
 
@@ -73,6 +74,7 @@ class InvoiceIn(BaseModel):
     due_from: datetime | None = None
     due_to: datetime | None = None
     crypto_address: str = ""  # адрес кошелька нерезидента из инвойса
+    route: str = "direct"  # маршрут проведения платежа (direct, bank, agent, exchange_organization, digital_depository)
 
 
 class SyncIn(BaseModel):
@@ -177,6 +179,7 @@ async def apply_sync(
                     invoice_row,
                     network_code,
                     aml_adapter or default_aml_adapter(),
+                    route=PaymentRoute(inv.route),
                 )
     await session.flush()
     return counts

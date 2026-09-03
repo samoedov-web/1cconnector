@@ -37,6 +37,7 @@ from connector.models import (
     ExpectedPaymentStatus as EPS,
     Invoice,
     Network,
+    PaymentRoute,
     Transaction,
     Wallet,
 )
@@ -103,6 +104,7 @@ async def ensure_expected_payment(
     invoice: Invoice,
     network_code: str,
     adapter: AmlAdapter,
+    route: PaymentRoute = PaymentRoute.DIRECT,
 ) -> ExpectedPayment | None:
     """Создать ожидаемый платёж по инвойсу и проверить адрес (шаги 2–3).
 
@@ -126,6 +128,7 @@ async def ensure_expected_payment(
             amount=invoice.amount,
             currency=invoice.currency,
             tolerance=settings.matching_amount_tolerance,
+            route=route,
         )
         session.add(payment)
         await session.flush()
