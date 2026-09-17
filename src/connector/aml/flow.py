@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,7 +126,10 @@ async def ensure_expected_payment(
             network=network_code,
             amount=invoice.amount,
             currency=invoice.currency,
-            tolerance=settings.matching_amount_tolerance,
+            # Явный Decimal: до round-trip через БД строка из настроек
+            # ломала арифметику допуска в той же сессии (находка
+            # приёмочного прогона).
+            tolerance=Decimal(settings.matching_amount_tolerance),
         )
         session.add(payment)
         await session.flush()
