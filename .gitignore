@@ -1,0 +1,39 @@
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py~
+
+# Distributions
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.local
+.env.*
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+```
