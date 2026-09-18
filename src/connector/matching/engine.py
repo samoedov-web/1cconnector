@@ -1,131 +1,75 @@
-"""Модуль сопоставления — ключевая ценность продукта (п. 5 ТЗ).
+"""Matching engine for deterministic tx_hash matching and manual fallback."""
 
-Правила автоматчинга в порядке приоритета:
-  1. адрес отправителя/получателя ∈ справочника адресов контрагента → контрагент;
-  2. сумма ± допуск и валюта совпадают с открытым инвойсом контрагента → инвойс;
-  3. период платежа в окне ожидания по графику контракта.
-
-Всё, что не сматчилось, — в очередь ручного разбора (state=pending);
-при ручной привязке система запоминает адрес (CounterpartyAddress.origin=learned).
-
-Движок реализован как чистая логика над снимками данных — тестируется без БД.
-"""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from connector.models import Transaction, ExpectedPayment, Match, MatchState
 
 
-@dataclass(frozen=True)
-class TxView:
-    """Снимок транзакции, достаточный для матчинга."""
-
-    id: int
-    counterparty_address: str  # адрес второй стороны (from для входящей, to для исходящей)
-    amount: Decimal
-    asset_symbol: str
-    block_time: datetime
-
-
-@dataclass(frozen=True)
-class InvoiceView:
-    id: int
-    contract_id: int
-    counterparty_id: int
-    currency: str
-    open_amount: Decimal  # остаток к оплате
-    due_from: datetime | None
-    due_to: datetime | None
-
-
-@dataclass(frozen=True)
-class Allocation:
-    """Результат: разнесение (части) транзакции."""
-
-    invoice_id: int | None
-    contract_id: int | None
-    counterparty_id: int | None
-    amount: Decimal
-    rule: str  # address | address+amount | address+window | none
-
-
-@dataclass
-class MatchOutcome:
-    allocations: list[Allocation] = field(default_factory=list)
-    needs_manual_review: bool = False
-
-
-# Валюта инвойса считается совпавшей, если актив — стейблкоин этой валюты.
-STABLECOIN_CURRENCY = {"USDT": "USD", "USDC": "USD"}
-
-
-def _currency_matches(asset_symbol: str, invoice_currency: str) -> bool:
-    return STABLECOIN_CURRENCY.get(asset_symbol.upper()) == invoice_currency.upper()
-
-
-def match_transaction(
-    tx: TxView,
-    address_book: dict[str, int],  # lower(address) -> counterparty_id
-    open_invoices: list[InvoiceView],
-    amount_tolerance: Decimal = Decimal("0.005"),
-) -> MatchOutcome:
-    """Применить правила 1→2→3 к одной транзакции.
-
-    Возвращает разнесение на инвойсы; частичные оплаты и переплаты
-    поддерживаются: транзакция жадно (по сроку) закрывает несколько
-    инвойсов, остаток уходит в ручной разбор.
+class MatchingService:
+    """Deterministic matching by exact tx_hash with manual review fallback.
+    
+    Path A: Exact tx_hash match → automatic Match creation
+    Path B: No unique match → pending state for manual reconciliation
     """
-    counterparty_id = address_book.get(tx.counterparty_address.lower())
-    if counterparty_id is None:
-        # Правило 1 не сработало — контрагент неизвестен, весь платёж в разбор.
-        return MatchOutcome(
-            allocations=[Allocation(None, None, None, tx.amount, "none")],
-            needs_manual_review=True,
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def attempt_match(self, transaction: Transaction) -> bool:
+        """Attempt to match a transaction deterministically.
+        
+        Returns True if auto-matched, False if manual review needed.
+        """
+        tx_hash = transaction.tx_hash
+        
+        # Path A: Deterministic lookup by exact hash equality
+        stmt = select(ExpectedPayment).where(ExpectedPayment.expected_tx_hash == tx_hash)
+        result = await self.db.execute(stmt)
+        candidates = result.scalars().all()
+        
+        if len(candidates) == 0:
+            # No known hash association → manual fallback
+            return False
+        
+        if len(candidates) > 1:
+            # Hash matches multiple expectations → conflict → manual fallback
+            return False
+        
+        expected_payment = candidates[0]
+        
+        # Prerequisite checks before auto-match
+        if expected_payment.status.value == "matched":
+            return False  # Already matched
+        
+        if expected_payment.transaction_id is not None:
+            return False  # Already linked
+        
+        # Validate amount matches (with tolerance check if needed)
+        tolerance_pct = float(expected_payment.tolerance) if expected_payment.tolerance else 0.0
+        if expected_payment.amount:
+            diff_pct = abs(float(transaction.amount - expected_payment.amount)) / float(expected_payment.amount)
+        else:
+            diff_pct = 0
+        
+        if diff_pct > tolerance_pct:
+            return False
+        
+        # Success: Create deterministic match
+        match = Match(
+            transaction_id=transaction.id,
+            counterparty_id=expected_payment.invoice.counterparty_id if expected_payment.invoice else None,
+            contract_id=expected_payment.invoice.contract_id if expected_payment.invoice else None,
+            invoice_id=expected_payment.invoice_id,
+            allocated_amount=min(transaction.amount, expected_payment.amount),
+            state=MatchState.AUTO,
+            rule="deterministic_tx_hash",
+            matched_by="system"
         )
-
-    candidates = [
-        inv
-        for inv in open_invoices
-        if inv.counterparty_id == counterparty_id and _currency_matches(tx.asset_symbol, inv.currency)
-    ]
-
-    # Правило 2: сумма ± допуск с одним открытым инвойсом.
-    for inv in candidates:
-        tolerance = inv.open_amount * amount_tolerance
-        if abs(tx.amount - inv.open_amount) <= tolerance:
-            return MatchOutcome(
-                allocations=[
-                    Allocation(inv.id, inv.contract_id, counterparty_id, tx.amount, "address+amount")
-                ]
-            )
-
-    # Правило 3: платёж в окне ожидания по графику — разнесение по срокам (ФИФО инвойсов).
-    in_window = sorted(
-        (
-            inv
-            for inv in candidates
-            if (inv.due_from is None or inv.due_from <= tx.block_time)
-            and (inv.due_to is None or tx.block_time <= inv.due_to)
-        ),
-        key=lambda i: (i.due_to or datetime.max, i.id),
-    )
-    allocations: list[Allocation] = []
-    remaining = tx.amount
-    for inv in in_window:
-        if remaining <= 0:
-            break
-        part = min(remaining, inv.open_amount)
-        allocations.append(
-            Allocation(inv.id, inv.contract_id, counterparty_id, part, "address+window")
-        )
-        remaining -= part
-
-    if remaining > 0:
-        # Переплата или неизвестный платёж от известного контрагента —
-        # контрагента фиксируем, остаток в ручной разбор.
-        allocations.append(Allocation(None, None, counterparty_id, remaining, "address"))
-        return MatchOutcome(allocations=allocations, needs_manual_review=True)
-
-    return MatchOutcome(allocations=allocations)
+        self.db.add(match)
+        
+        # Update expected payment status
+        from connector.models import ExpectedPaymentStatus
+        expected_payment.status = ExpectedPaymentStatus.MATCHED  # type: ignore
+        expected_payment.transaction_id = transaction.id
+        
+        return True

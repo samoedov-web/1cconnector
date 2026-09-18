@@ -227,3 +227,25 @@ class IndexerService:
                     finalized.append(tx)
         await self.session.flush()
         return finalized
+
+
+# --- Matching integration ----------------------------------------------------
+
+
+async def apply_matching_to_expected_payments(
+    session: AsyncSession,
+    transaction: Transaction,
+) -> None:
+    """Apply deterministic matching to expected payments after transaction ingestion.
+    
+    Called by indexer after new transaction is persisted.
+    Uses MatchingService for Path A (deterministic) or marks for manual review (Path B).
+    """
+    from connector.matching.engine import MatchingService
+    
+    matching = MatchingService(session)  # type: ignore[arg-type]
+    matched = matching.attempt_match(transaction)  # type: ignore[arg-type]
+    
+    if matched:
+        await session.commit()
+    # If not matched, it's marked pending for manual review - no action needed here
