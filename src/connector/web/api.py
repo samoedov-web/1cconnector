@@ -319,3 +319,44 @@ async def resolve_match(
     )
     await session.commit()
     return {"status": "resolved"}
+
+
+# --- Submit expected tx_hash for deterministic matching ---------------------
+
+
+class TxHashSubmitIn(BaseModel):
+    expected_tx_hash: str
+
+
+@router.post("/expected-payments/{ep_id}/submit-tx-hash")
+async def submit_expected_tx_hash(
+    ep_id: int,
+    data: TxHashSubmitIn,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_operator),
+) -> dict:
+    """Submit expected tx_hash for deterministic matching.
+    
+    This endpoint allows treasurer to provide the external transaction hash
+    before it's detected by indexer. Enables Path A deterministic matching.
+    
+    Does NOT sign, broadcast, or execute any payment.
+    Only records the expected hash for read-only matching.
+    """
+    from connector.models import ExpectedPayment
+    
+    ep = await session.get(ExpectedPayment, ep_id)
+    if not ep:
+        raise HTTPException(status_code=404, detail="ExpectedPayment not found")
+    
+    # Validate hash format (basic check)
+    if not data.expected_tx_hash.startswith("0x") or len(data.expected_tx_hash) < 64:
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid tx_hash format. Must start with 0x and be at least 64 chars."
+        )
+    
+    ep.expected_tx_hash = data.expected_tx_hash
+    await session.commit()
+    
+    return {"status": "ok", "message": "tx_hash recorded for deterministic matching"}
