@@ -662,3 +662,4 @@ class ReconciliationCase(Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolution: Mapped[str] = mapped_column(Text, default="")
+# Evidence relationship will be added manually if needed
