@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Акт сверки / Reconciliation Statement</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 11pt; margin: 2cm 1.5cm; color: #000; }
+  h1 { font-size: 14pt; text-align: center; margin-bottom: 0.1em; }
+  h2 { font-size: 11pt; text-align: center; font-weight: normal; margin: 0 0 1.2em; color: #333; }
+  .section { font-weight: bold; margin: 1.2em 0 0.4em; }
+  .section span { font-weight: normal; color: #555; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  th, td { border: 1px solid #000; padding: 3px 6px; text-align: left; }
+  th { background: #f0f0f0; }
+  th small { display: block; font-weight: normal; color: #555; }
+  td.num { text-align: right; }
+  .mono { font-family: "Courier New", monospace; font-size: 8pt; word-break: break-all; }
+  .totals { margin-top: 1.2em; font-size: 11pt; }
+  .sign { margin-top: 3em; display: flex; justify-content: space-between; gap: 40px; }
+  .sign div { flex: 1; font-size: 10pt; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+
+<h1>АКТ СВЕРКИ ВЗАИМОРАСЧЁТОВ</h1>
+<h2>RECONCILIATION STATEMENT</h2>
+<p style="text-align:center">
+  с контрагентом / with counterparty: <b>{{ counterparty.name }}</b><br>
+  период / period: {{ period.from }} — {{ period.to }} · сформирован / issued: {{ generated_at }}
+</p>
+
+<div class="section">Контракты / Contracts</div>
+<table>
+  <tr>
+    <th>Номер / Number</th>
+    <th>Учётный номер / Registration No.</th>
+    <th>Валюта / Currency</th>
+  </tr>
+  {% for c in contracts %}
+  <tr><td>{{ c.number }}</td><td>{{ c.registration_number or "—" }}</td><td>{{ c.currency }}</td></tr>
+  {% endfor %}
+</table>
+
+<div class="section">1. Начислено по инвойсам <span>/ Invoiced</span></div>
+<table>
+  <tr>
+    <th>Дата<small>Date</small></th>
+    <th>Инвойс<small>Invoice</small></th>
+    <th>Контракт<small>Contract</small></th>
+    <th>Сумма<small>Amount</small></th>
+    <th>Валюта<small>Currency</small></th>
+  </tr>
+  {% for i in invoices %}
+  <tr>
+    <td>{{ i.date or "—" }}</td><td>{{ i.number }}</td><td>{{ i.contract_number }}</td>
+    <td class="num">{{ i.amount }}</td><td>{{ i.currency }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5">Начислений за период нет / No invoices in period</td></tr>
+  {% endfor %}
+</table>
+
+<div class="section">2. Оплачено цифровой валютой <span>/ Paid in digital currency</span></div>
+<table>
+  <tr>
+    <th>Дата (UTC)<small>Date</small></th>
+    <th>Актив<small>Asset</small></th>
+    <th>Сумма<small>Amount</small></th>
+    <th>В валюте контракта<small>In contract currency</small></th>
+    <th>Контракт<small>Contract</small></th>
+    <th>Хэш транзакции<small>Transaction hash</small></th>
+  </tr>
+  {% for p in payments %}
+  <tr>
+    <td>{{ p.date }}</td>
+    <td>{{ p.asset }}</td>
+    <td class="num">{{ p.amount }}</td>
+    <td class="num">{{ p.contract_currency_amount or "—" }} {{ p.contract_currency or "" }}</td>
+    <td>{{ p.contract_number or "—" }}</td>
+    <td class="mono">{{ p.tx_hash }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6">Оплат за период нет / No payments in period</td></tr>
+  {% endfor %}
+</table>
+
+<p class="totals">
+  Начислено / Invoiced: <b>{{ totals.invoiced }} {{ totals.currency }}</b> ·
+  Оплачено / Paid: <b>{{ totals.paid }} {{ totals.currency }}</b> ·
+  Сальдо / Balance: <b>{{ totals.balance }} {{ totals.currency }}</b>
+</p>
+
+<p style="font-size:9pt">Платежи подтверждаются записями публичного блокчейна и доступны
+для независимой проверки по хэшу транзакции. / Payments are confirmed by public blockchain
+records and can be independently verified by transaction hash.</p>
+
+<div class="sign">
+  <div>От нашей стороны / On our behalf:<br><br>_____________________<br>(подпись / signature)</div>
+  <div>От контрагента / On counterparty's behalf:<br><br>_____________________<br>(подпись / signature)</div>
+</div>
+
+</body>
+</html>

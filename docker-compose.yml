@@ -1,0 +1,52 @@
+# Развёртывание on-premise: один сервер клиента (п. 10 ТЗ).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: connector
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-connector}
+      POSTGRES_DB: connector
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U connector"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      CONNECTOR_DATABASE_URL: postgresql+psycopg://connector:${POSTGRES_PASSWORD:-connector}@db:5432/connector
+    ports:
+      - "8000:8000"
+    volumes:
+      # Обновляемые шаблоны отчётности — заменяются без пересборки образа.
+      - ./templates:/app/templates:ro
+      # Лицензия: раскомментировать после получения license.json от вендора
+      # (без файла — деморежим: 1 юрлицо, 1 кошелёк).
+      # - ./license.json:/app/license.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  indexer:
+    build: .
+    command: ["python", "-m", "connector.worker"]
+    env_file: .env
+    environment:
+      CONNECTOR_DATABASE_URL: postgresql+psycopg://connector:${POSTGRES_PASSWORD:-connector}@db:5432/connector
+    depends_on:
+      # api применяет миграции до готовности health-check — индексер стартует
+      # на уже смигрированной схеме.
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
