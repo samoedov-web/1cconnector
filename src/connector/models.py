@@ -435,6 +435,8 @@ class ExpectedPayment(Base):
     sent_marked_by: Mapped[str] = mapped_column(String(128), default="")
     # Алерт по таймеру уже поднят (чтобы не дублировать каждый цикл).
     sent_timeout_alerted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ожидаемый хэш внешней транзакции для детерминированного сопоставления
+    expected_tx_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
@@ -535,3 +537,251 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(String(64))
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     note: Mapped[str] = mapped_column(Text, default="")
+
+
+# =============================================================================
+# STAGE 1 — CANONICAL v2.1 DATA FOUNDATION
+# =============================================================================
+# Канонические сущности для CryptoVED v2.1 (Whitepaper/TZ v2.1)
+# READ-ONLY: никаких private keys, signing, broadcast
+
+
+class RegulatoryVersionStatus(enum.StrEnum):
+    """Статус регуляторной версии."""
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    EFFECTIVE = "effective"
+    SUPERSEDED = "superseded"
+
+
+class RegulatoryVersion(Base):
+    """Версионирование применяемых регуляторных правил.
+
+    Юридические/регуляторные значения не должны зашиваться в бизнес-код
+    без версии. Все правила привязываются к конкретной версии.
+    """
+
+    __tablename__ = "regulatory_versions"
+    __table_args__ = (UniqueConstraint("code", "effective_from"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64))  # например "KVVO-2024-09"
+    source_document: Mapped[str] = mapped_column(String(512))  # название документа
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checksum: Mapped[str] = mapped_column(String(64))  # SHA-256 содержимого
+    status: Mapped[RegulatoryVersionStatus] = mapped_column(
+        Enum(RegulatoryVersionStatus, native_enum=False),
+        default=RegulatoryVersionStatus.DRAFT,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # CHECK constraint: effective_to > effective_from если задан
+    # Реализуется на уровне БД в миграции
+
+
+class Operation(Base):
+    """Бизнес-операция ВЭД — будущий владелец жизненного цикла.
+
+    ONE OPERATION = ONE INVOICE.
+    На Stage 1 только data model, lifecycle НЕ реализуется.
+    """
+
+    __tablename__ = "operations"
+    __table_args__ = (UniqueConstraint("invoice_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"))
+    contract_ref: Mapped[str | None] = mapped_column(String(256))
+    counterparty_id: Mapped[int | None] = mapped_column(ForeignKey("counterparties.id"))
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
+    network_id: Mapped[int | None] = mapped_column(ForeignKey("networks.id"))
+    wallet_address: Mapped[str | None] = mapped_column(String(128))
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    invoice: Mapped[Invoice] = relationship()
+    counterparty: Mapped[Counterparty | None] = relationship()
+    asset: Mapped[Asset | None] = relationship()
+    network: Mapped[Network | None] = relationship()
+    regulatory_version: Mapped[RegulatoryVersion | None] = relationship()
+
+
+class EvidenceLink(Base):
+    """Связь Operation с доказательными материалами.
+
+    Evidence history должна быть append-only по смыслу.
+    На Stage 1 только data foundation, не full Evidence Vault.
+    """
+
+    __tablename__ = "evidence_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    evidence_type: Mapped[str] = mapped_column(String(64))  # blockchain_tx, registry_extract, etc.
+    source: Mapped[str] = mapped_column(String(128))  # provider name
+    source_reference: Mapped[str | None] = mapped_column(String(256))  # external ID
+    raw_payload: Mapped[dict | None] = mapped_column(JSON)
+    canonical_payload: Mapped[dict | None] = mapped_column(JSON)
+    sha256_checksum: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    adapter_version: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    operation: Mapped[Operation] = relationship()
+
+    __table_args__ = ()  # Индексы создаются в миграции
+
+
+class ComplianceDecisionType(enum.StrEnum):
+    """Тип compliance решения."""
+
+    AML = "aml"
+    REGISTRY = "registry"
+    ISSUER = "issuer"
+
+
+class ComplianceDecisionResult(enum.StrEnum):
+    """Результат compliance решения."""
+
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PENDING = "pending"
+
+
+class ComplianceDecision(Base):
+    """Отдельная сущность решения compliance.
+
+    НЕ смешивать AML, Registry, Issuer Risk в одну модель —
+    это разные контрольные контуры.
+    """
+
+    __tablename__ = "compliance_decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    decision_type: Mapped[ComplianceDecisionType] = mapped_column(
+        Enum(ComplianceDecisionType, native_enum=False)
+    )
+    decision: Mapped[ComplianceDecisionResult] = mapped_column(
+        Enum(ComplianceDecisionResult, native_enum=False)
+    )
+    decided_by: Mapped[str | None] = mapped_column(String(128))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reason_note: Mapped[str | None] = mapped_column(Text)
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
+    evidence_link_id: Mapped[int | None] = mapped_column(ForeignKey("evidence_links.id"))
+
+    operation: Mapped[Operation] = relationship()
+    regulatory_version: Mapped[RegulatoryVersion | None] = relationship()
+    evidence_link: Mapped[EvidenceLink | None] = relationship()
+
+
+class RegistrySnapshot(Base):
+    """Снимок состояния участника/посредника/реестра."""
+
+    __tablename__ = "registry_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    subject_reference: Mapped[str] = mapped_column(String(256))  # кто проверялся
+    source: Mapped[str] = mapped_column(String(128))  # источник данных
+    status_result: Mapped[str] = mapped_column(String(64))  # результат проверки
+    snapshot_payload: Mapped[dict | None] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))  # SHA-256
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
+
+    operation: Mapped[Operation] = relationship()
+    regulatory_version: Mapped[RegulatoryVersion | None] = relationship()
+
+
+class IssuerRiskCheck(Base):
+    """Отдельная проверка риска эмитента/актива."""
+
+    __tablename__ = "issuer_risk_checks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    contract_address: Mapped[str | None] = mapped_column(String(128))
+    network_id: Mapped[int | None] = mapped_column(ForeignKey("networks.id"))
+    risk_status: Mapped[str] = mapped_column(String(64))  # low/medium/high/blocked
+    source: Mapped[str] = mapped_column(String(128))
+    payload: Mapped[dict | None] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    operation: Mapped[Operation] = relationship()
+    asset: Mapped[Asset] = relationship()
+    network: Mapped[Network | None] = relationship()
+
+
+class ReviewTaskStatus(enum.StrEnum):
+    """Статус задачи ручной проверки."""
+
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    RESOLVED = "resolved"
+    CANCELLED = "cancelled"
+
+
+class ReviewTask(Base):
+    """Очередь человеческого рассмотрения бизнес/комплаенс исключений.
+
+    НЕ превращать в универсальный контейнер технических ошибок.
+    Provider outage / retry / adapter error не становятся автоматически
+    бизнес-состояниями Operation.
+    """
+
+    __tablename__ = "review_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    task_type: Mapped[str] = mapped_column(String(64))  # compliance_exception, reconciliation, etc.
+    status: Mapped[ReviewTaskStatus] = mapped_column(
+        Enum(ReviewTaskStatus, native_enum=False),
+        default=ReviewTaskStatus.PENDING,
+    )
+    priority: Mapped[str] = mapped_column(String(16), default="normal")  # low/normal/high/urgent
+    reason: Mapped[str] = mapped_column(Text)
+    assigned_to: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+
+    operation: Mapped[Operation] = relationship()
+
+    # Индекс (status, priority) создаётся в миграции
+
+
+class ReconciliationCase(Base):
+    """Отдельная сущность для расхождений.
+
+    Stage 1 создаёт модель. Reconciliation engine НЕ реализуется.
+    """
+
+    __tablename__ = "reconciliation_cases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    case_type: Mapped[str] = mapped_column(String(64))  # amount_mismatch, missing_tx, etc.
+    status: Mapped[str] = mapped_column(String(32), default="open")  # open/resolved/closed
+    expected_reference: Mapped[str | None] = mapped_column(String(256))
+    actual_reference: Mapped[str | None] = mapped_column(String(256))
+    difference_details: Mapped[dict | None] = mapped_column(JSON)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution: Mapped[str | None] = mapped_column(Text)
+
+    operation: Mapped[Operation] = relationship()
