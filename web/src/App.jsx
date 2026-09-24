@@ -8,6 +8,7 @@ import Wallets from './pages/Wallets'
 import Counterparties from './pages/Counterparties'
 import Accounting from './pages/Accounting'
 import Aml from './pages/Aml'
+import Reconciliation from "./pages/Reconciliation";
 import Users from './pages/Users'
 
 const NAV = [
@@ -71,6 +72,7 @@ export default function App() {
       <Route path="/counterparties" element={<Protected><Counterparties /></Protected>} />
       <Route path="/accounting" element={<Protected><Accounting /></Protected>} />
       <Route path="/aml" element={<Protected><Aml /></Protected>} />
+        <Route path="reconciliation" element={<Reconciliation />} />
       <Route path="/users" element={<Protected><Users /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

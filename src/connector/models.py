@@ -428,6 +428,13 @@ class ExpectedPayment(Base):
     # полная запись решения — в аудит-логе.
     decided_by: Mapped[str] = mapped_column(String(128), default="")
     decision_note: Mapped[str] = mapped_column(Text, default="")
+    # Отметка казначея «отправил» (решение владельца по сценарию 4):
+    # точка отсчёта таймера «транзакция не обнаружена за N минут»;
+    # сам статус меняет только индексер, обнаружив транзакцию.
+    sent_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_marked_by: Mapped[str] = mapped_column(String(128), default="")
+    # Алерт по таймеру уже поднят (чтобы не дублировать каждый цикл).
+    sent_timeout_alerted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
@@ -528,3 +535,131 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(String(64))
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     note: Mapped[str] = mapped_column(Text, default="")
+
+# --- STAGE 1 & 2 CANONICAL ENTITIES ---
+
+class OperationState(enum.StrEnum):
+    DRAFT = "draft"
+    COMPLIANCE_PENDING = "compliance_pending"
+    REGISTRY_CHECKED = "registry_checked"
+    AML_CHECKED = "aml_checked"
+    ISSUER_CHECKED = "issuer_checked"
+    APPROVED = "approved"
+    SENT = "sent"
+    DETECTED = "detected"
+    FINAL = "final"
+    MATCHED = "matched"
+    ACCOUNTED = "accounted"
+    REPORTED = "reported"
+    CLOSED = "closed"
+    REVIEW = "review"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    ORPHANED = "orphaned"
+    PROVIDER_DEGRADED = "provider_degraded"
+    ISSUER_FREEZE = "issuer_freeze"
+    MANUAL_RECONCILIATION = "manual_reconciliation"
+
+class RegulatoryVersion(Base):
+    __tablename__ = "regulatory_versions"
+    __table_args__ = (UniqueConstraint("code", "effective_from"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64))
+    source_document: Mapped[str] = mapped_column(Text)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checksum: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="draft") # draft, published, effective, superseded
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class Operation(Base):
+    __tablename__ = "operations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), unique=True)
+    contract_ref: Mapped[str] = mapped_column(String(128), default="")
+    counterparty_id: Mapped[int] = mapped_column(ForeignKey("counterparties.id"))
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    network_id: Mapped[int] = mapped_column(ForeignKey("networks.id"))
+    wallet_address: Mapped[str] = mapped_column(String(128))
+    regulatory_version_id: Mapped[int | None] = mapped_column(ForeignKey("regulatory_versions.id"))
+    state: Mapped[OperationState] = mapped_column(Enum(OperationState, native_enum=False), default=OperationState.DRAFT)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+class EvidenceLink(Base):
+    __tablename__ = "evidence_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    evidence_type: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(128))
+    source_reference: Mapped[str] = mapped_column(String(256))
+    raw_payload: Mapped[dict] = mapped_column(JSON)
+    canonical_payload: Mapped[str] = mapped_column(Text, default="")
+    sha256_checksum: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    adapter_version: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class ComplianceDecision(Base):
+    __tablename__ = "compliance_decisions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    decision_type: Mapped[str] = mapped_column(String(32)) # aml, registry, issuer
+    decision: Mapped[str] = mapped_column(String(32)) # approved, rejected, pending
+    decided_by: Mapped[str] = mapped_column(String(128))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reason_note: Mapped[str] = mapped_column(Text, default="")
+    regulatory_version_id: Mapped[int | None] = mapped_column(ForeignKey("regulatory_versions.id"))
+    evidence_link_id: Mapped[int | None] = mapped_column(ForeignKey("evidence_links.id"))
+
+class RegistrySnapshot(Base):
+    __tablename__ = "registry_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    subject_reference: Mapped[str] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(128))
+    status_result: Mapped[str] = mapped_column(String(64))
+    snapshot_payload: Mapped[dict] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    regulatory_version_id: Mapped[int | None] = mapped_column(ForeignKey("regulatory_versions.id"))
+
+class IssuerRiskCheck(Base):
+    __tablename__ = "issuer_risk_checks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    contract_address: Mapped[str] = mapped_column(String(128))
+    network_id: Mapped[int] = mapped_column(ForeignKey("networks.id"))
+    risk_status: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(128))
+    payload: Mapped[dict] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class ReviewTask(Base):
+    __tablename__ = "review_tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    task_type: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="pending") # pending, assigned, resolved, cancelled
+    priority: Mapped[str] = mapped_column(String(16), default="normal")
+    reason: Mapped[str] = mapped_column(Text)
+    assigned_to: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_note: Mapped[str] = mapped_column(Text, default="")
+
+class ReconciliationCase(Base):
+    __tablename__ = "reconciliation_cases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    case_type: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    expected_reference: Mapped[str] = mapped_column(String(256))
+    actual_reference: Mapped[str] = mapped_column(String(256))
+    difference_details: Mapped[dict] = mapped_column(JSON, default=dict)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution: Mapped[str] = mapped_column(Text, default="")
+# Evidence relationship will be added manually if needed

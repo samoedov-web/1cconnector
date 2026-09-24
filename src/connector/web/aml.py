@@ -4,11 +4,14 @@
 - просмотр списков — все аутентифицированные роли (казначей видит
   «одобрено к отправке», комплаенс — очередь review);
 - решение по aml_review — только комплаенс-офицер или админ; полная
-  запись решения — в аудит-логе, краткая — на самом платеже.
+  запись решения — в аудит-логе, краткая — на самом платеже;
+- отметка «отправил» — казначей или админ (решение владельца по
+  сценарию 4): фиксирует момент отправки для таймера обнаружения.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import StrEnum
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,7 +30,12 @@ from connector.models import (
     ExpectedPaymentStatus as EPS,
     Invoice,
 )
-from connector.security import CurrentUser, require_compliance, require_reader
+from connector.security import (
+    CurrentUser,
+    require_compliance,
+    require_reader,
+    require_treasurer,
+)
 
 router = APIRouter(prefix="/api/v1/aml", tags=["aml"])
 
@@ -60,6 +68,9 @@ async def _payment_row(session: AsyncSession, payment: ExpectedPayment) -> dict:
         "decision_note": payment.decision_note,
         "status_changed_at": payment.status_changed_at.isoformat()
         if payment.status_changed_at else None,
+        "sent_marked_at": payment.sent_marked_at.isoformat()
+        if payment.sent_marked_at else None,
+        "sent_marked_by": payment.sent_marked_by,
     }
 
 
@@ -131,3 +142,46 @@ async def decide(
     )
     await session.commit()
     return {"status": new_status.value}
+
+
+@router.post("/payments/{payment_id}/mark-sent")
+async def mark_sent(
+    payment_id: int,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_treasurer),
+) -> dict:
+    """Отметка казначея «отправил» (решение владельца по сценарию 4).
+
+    Статус не меняется — его меняет только индексер, обнаружив
+    транзакцию; отметка задаёт точку отсчёта таймера «не обнаружена
+    за N минут» (алерт казначею — проверить вручную).
+    """
+    payment = await session.get(ExpectedPayment, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Ожидаемый платёж не найден")
+    if payment.status != EPS.AML_APPROVED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Платёж в статусе «{payment.status.value}» — отметить "
+            "отправку можно только по одобренному платежу",
+        )
+    if payment.sent_marked_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Отправка уже отмечена "
+            f"({payment.sent_marked_by}, {payment.sent_marked_at.isoformat()})",
+        )
+    payment.sent_marked_at = datetime.now(timezone.utc)
+    payment.sent_marked_by = user.username
+    session.add(
+        AuditLog(
+            actor=user.username,
+            action="aml_marked_sent",
+            entity="expected_payment",
+            entity_id=str(payment.id),
+            details={"to_address": payment.to_address,
+                     "amount": str(payment.amount)},
+        )
+    )
+    await session.commit()
+    return {"sent_marked_at": payment.sent_marked_at.isoformat()}
