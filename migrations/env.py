@@ -12,7 +12,7 @@ target_metadata = Base.metadata
 def _sync_url() -> str:
     """Alembic работает через синхронный драйвер: psycopg поддерживает оба
     режима, async-суффиксы других драйверов отбрасываются."""
-    return settings.database_url.replace("+aiosqlite", "").replace("+asyncpg", "")
+    return settings.DATABASE_URL.replace("+aiosqlite", "").replace("+asyncpg", "")
 
 
 def run_migrations_offline() -> None:

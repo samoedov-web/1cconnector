@@ -8,7 +8,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost/connector"
+    DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost/connector"
     
     # Blockchain Providers (Read-Only URLs)
     ETHEREUM_RPC_URL: str = "https://eth-mainnet.example.com"
