@@ -1,1 +1,1 @@
-from .stage3.adapters import *
+from .adapters import *
