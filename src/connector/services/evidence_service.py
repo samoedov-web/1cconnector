@@ -52,6 +52,7 @@ class EvidenceService:
             adapter_version=adapter_version,
         )
         self.session.add(evidence)
+        await self.session.flush()
         return evidence
 
     async def get_evidence(self, evidence_id: int) -> Optional[EvidenceLink]:

@@ -84,6 +84,7 @@ class MonitoringService:
             sent=False  # Флаг отправки во внешний webhook
         )
         self.session.add(alert)
+        await self.session.flush()
         log.warning(f"Alert created: {title} [{severity}]")
         return alert
 

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from connector.models import OnecDocument, OnecDocType, OnecDocStatus, Transaction
+from connector.models import OnecDocument, OnecDocType, OnecDocStatus, Transaction, Network
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -22,7 +22,10 @@ class OneCExchangeService:
 
     async def create_receipt_doc(self, transaction: Transaction, payload: Dict[str, Any]) -> OnecDocument:
         """Создает документ «Поступление цифровой валюты»."""
-        key = f"{transaction.network.code}:{transaction.tx_hash}:{OnecDocType.RECEIPT.value}"
+        network = await self.session.get(Network, transaction.network_id)
+        if network is None:
+            raise ValueError(f"Network {transaction.network_id} not found")
+        key = f"{network.code}:{transaction.tx_hash}:{OnecDocType.RECEIPT.value}"
         doc = OnecDocument(
             idempotency_key=key,
             doc_type=OnecDocType.RECEIPT,
@@ -35,7 +38,10 @@ class OneCExchangeService:
 
     async def create_disposal_doc(self, transaction: Transaction, payload: Dict[str, Any]) -> OnecDocument:
         """Создает документ «Выбытие цифровой валюты»."""
-        key = f"{transaction.network.code}:{transaction.tx_hash}:{OnecDocType.DISPOSAL.value}"
+        network = await self.session.get(Network, transaction.network_id)
+        if network is None:
+            raise ValueError(f"Network {transaction.network_id} not found")
+        key = f"{network.code}:{transaction.tx_hash}:{OnecDocType.DISPOSAL.value}"
         doc = OnecDocument(
             idempotency_key=key,
             doc_type=OnecDocType.DISPOSAL,

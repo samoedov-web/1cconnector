@@ -63,8 +63,12 @@ class RegulatoryReportingService:
 
     async def generate_fns_notification(self, operation: Operation) -> FnsNotification:
         """Генерирует уведомление для ФНС на основе операции."""
-        contract = operation.contract
-        counterparty = contract.counterparty if contract else None
+        result = await self.session.execute(
+            select(Contract)
+            .join(Invoice, Invoice.contract_id == Contract.id)
+            .where(Invoice.id == operation.invoice_id)
+        )
+        contract = result.scalar_one_or_none()
         
         # Получаем ИНН организации (заглушка, в реальности из Organization)
         org_inn = "0000000000" 

@@ -38,22 +38,23 @@ class TaxRegistryService:
     async def get_open_lots(self, asset_id: int) -> List[TaxLot]:
         """Получает открытые партии (остаток > 0) для актива."""
         result = await self.session.execute(
-            select(Lot)
+            select(Lot, Asset.symbol)
+            .join(Asset, Asset.id == Lot.asset_id)
             .where(Lot.asset_id == asset_id)
             .where(Lot.remaining > 0)
             .order_by(Lot.acquired_at)  # ФИФО: сначала старые
         )
-        lots = result.scalars().all()
+        rows = result.all()
         return [
             TaxLot(
-                asset_symbol=lot.asset.symbol,
+                asset_symbol=asset_symbol,
                 quantity=lot.quantity,
                 unit_cost_rub=lot.unit_cost_rub,
                 total_cost_rub=lot.quantity * lot.unit_cost_rub,
                 acquired_at=lot.acquired_at,
-                remaining=lot.remaining
+                remaining=lot.remaining,
             )
-            for lot in lots
+            for lot, asset_symbol in rows
         ]
 
     async def calculate_disposal_tax(self, transaction: Transaction) -> TaxDisposal:
