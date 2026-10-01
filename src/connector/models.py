@@ -262,6 +262,9 @@ class RateSnapshot(Base):
 
     source_primary: Mapped[str] = mapped_column(String(128))
     source_details: Mapped[dict] = mapped_column(JSON, default=dict)
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -732,6 +735,9 @@ class EvidenceLink(Base):
     sha256_checksum: Mapped[str] = mapped_column(String(64))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     adapter_version: Mapped[str] = mapped_column(String(32), default="")
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class ComplianceDecision(Base):

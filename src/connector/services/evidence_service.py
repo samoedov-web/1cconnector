@@ -50,6 +50,7 @@ class EvidenceService:
             sha256_checksum=checksum,
             observed_at=observed_at or utcnow(),
             adapter_version=adapter_version,
+            regulatory_version_id=operation.regulatory_version_id,
         )
         self.session.add(evidence)
         await self.session.flush()

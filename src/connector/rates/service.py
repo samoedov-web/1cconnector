@@ -34,6 +34,7 @@ class RateService:
         as_of: datetime,
         purpose: str = "finality",
         transaction_id: int | None = None,
+        regulatory_version_id: int | None = None,
     ) -> RateSnapshot:
         """Снимок курса: asset→contract_currency и contract_currency→RUB."""
         a2c, a2c_fb = await self._quote(asset_symbol, contract_currency, as_of)
@@ -54,6 +55,7 @@ class RateService:
             contract_to_rub=c2r.rate,
             asset_to_rub=a2c.rate * c2r.rate,
             source_primary=a2c.source,
+            regulatory_version_id=regulatory_version_id,
             source_details={
                 "asset_to_contract": {
                     "source": a2c.source,
