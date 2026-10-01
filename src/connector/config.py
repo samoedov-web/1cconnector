@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -49,6 +51,10 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
 
     # --- Депозитарная сверка ---
+    # off    — custody-слой выключен;
+    # shadow — сверка работает, бухгалтерский учёт остаётся chain-first;
+    # active — custody-first ещё не реализован, API возвращает явную заглушку.
+    custody_mode: Literal["off", "shadow", "active"] = "off"
     custody_source_id: str = "mock-depo"
     custody_fixtures_dir: str = "fixtures/custody"
 

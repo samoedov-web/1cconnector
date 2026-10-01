@@ -235,7 +235,7 @@ export default function Reconciliation() {
   const [runs, setRuns] = useState([])
   const [openRun, setOpenRun] = useState(null)
 
-  const [mode, setMode] = useState('shadow')
+  const [modeInfo, setModeInfo] = useState(null)
 
   const [form, setForm] = useState({
     date_from: localDate(-30),
@@ -254,6 +254,15 @@ export default function Reconciliation() {
 
   const load = useCallback(async () => {
     try {
+      const currentMode = await api(`${API}/mode`)
+      setModeInfo(currentMode)
+
+      if (currentMode.mode !== 'shadow') {
+        setSourceInfo(null)
+        setRuns([])
+        return
+      }
+
       const [source, history] = await Promise.all([
         api(`${API}/sources`),
         api(`${API}/runs`),
@@ -321,7 +330,6 @@ export default function Reconciliation() {
     try {
       const result = await api(`${API}/runs`, {
         method: 'POST',
-        params: { mode },
         body: {
           source_id: sourceInfo?.active || undefined,
           ...period(),
@@ -344,6 +352,31 @@ export default function Reconciliation() {
     } finally {
       setBusy(false)
     }
+  }
+
+  if (modeInfo && modeInfo.mode !== 'shadow') {
+    return (
+      <>
+        <h1>Сверка с депозитарием</h1>
+
+        <div
+          className="panel"
+          style={{ marginTop: 0 }}
+        >
+          <span
+            className={`badge ${
+              modeInfo.mode === 'active'
+                ? 'err'
+                : 'off'
+            }`}
+          >
+            custody_mode={modeInfo.mode}
+          </span>
+
+          <p>{modeInfo.message}</p>
+        </div>
+      </>
+    )
   }
 
   return (
@@ -454,26 +487,6 @@ export default function Reconciliation() {
               />
             </label>
 
-            <label>
-              Режим
-              <select
-                value={mode}
-                onChange={(event) =>
-                  setMode(event.target.value)
-                }
-              >
-                <option value="off">
-                  OFF
-                </option>
-                <option value="shadow">
-                  SHADOW
-                </option>
-                <option value="active">
-                  ACTIVE
-                </option>
-              </select>
-            </label>
-
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -506,7 +519,7 @@ export default function Reconciliation() {
             </button>
 
             <button
-              disabled={busy || mode === 'off'}
+              disabled={busy}
               onClick={runReconciliation}
             >
               {busy
@@ -515,17 +528,9 @@ export default function Reconciliation() {
             </button>
           </div>
 
-          {mode === 'shadow' && (
+          {modeInfo?.mode === 'shadow' && (
             <p className="muted">
-              SHADOW: результат сверки передаётся в 1С
-              только как информационная запись без
-              бухгалтерских проводок.
-            </p>
-          )}
-
-          {mode === 'off' && (
-            <p className="muted">
-              OFF: запуск сверки отключён.
+              {modeInfo.message}
             </p>
           )}
         </div>

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +57,58 @@ router = APIRouter(
     prefix="/api/v1/custody/reconciliation",
     tags=["custody"],
 )
+
+
+ADR_ACTIVE = "docs/adr/ADR-001-custody-first.md"
+
+MODE_MESSAGES = {
+    "off": (
+        "Слой депозитарной сверки выключен (custody_mode=off). "
+        "Для загрузки выписок и сверки установите "
+        "CONNECTOR_CUSTODY_MODE=shadow — на учёт это не влияет: "
+        "источник истины остаётся блокчейн."
+    ),
+    "shadow": (
+        "Режим shadow: выписки загружаются и сверяются, "
+        "в 1С уходит только информационный регистр. "
+        "Источник истины для учёта — блокчейн."
+    ),
+    "active": (
+        "Режим custody_mode=active будет доступен после реализации "
+        "custody-first учёта. "
+        f"Дизайн перехода: {ADR_ACTIVE}. Используйте режим shadow."
+    ),
+}
+
+
+def require_custody_shadow() -> None:
+    """Custody workflow разрешён только в shadow-режиме."""
+    mode = settings.custody_mode
+
+    if mode == "shadow":
+        return
+
+    if mode == "active":
+        raise HTTPException(
+            status_code=501,
+            detail=MODE_MESSAGES["active"],
+        )
+
+    raise HTTPException(
+        status_code=403,
+        detail=MODE_MESSAGES["off"],
+    )
+
+
+@router.get("/mode")
+async def custody_mode(
+    user: CurrentUser = Depends(require_reader),
+) -> dict:
+    mode = settings.custody_mode
+    return {
+        "mode": settings.custody_mode,
+        "message": MODE_MESSAGES[mode],
+    }
 
 
 def _adapter():
@@ -113,6 +165,7 @@ def _run_row(run: ReconciliationRun) -> dict:
 @router.get("/sources")
 async def sources(
     user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     adapter = _adapter()
     caps = adapter.capabilities()
@@ -135,6 +188,7 @@ async def fetch_statements(
     payload: PeriodRequest,
     db: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_operator),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     if payload.period_from > payload.period_to:
         raise HTTPException(
@@ -191,6 +245,7 @@ async def get_runs(
     source_id: Optional[str] = None,
     db: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
 ):
     stmt = (
         select(ReconciliationRun)
@@ -213,22 +268,10 @@ async def get_runs(
 @router.post("/runs")
 async def create_run(
     payload: ReconciliationRunRequest,
-    mode: str = Query(default="shadow"),
     db: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_operator),
-):
-    if mode not in {"off", "shadow", "active"}:
-        raise HTTPException(
-            status_code=422,
-            detail="mode must be one of: off, shadow, active",
-        )
 
-    if mode == "off":
-        raise HTTPException(
-            status_code=409,
-            detail="Reconciliation is disabled in off mode",
-        )
-
+    _: None = Depends(require_custody_shadow),):
     if payload.period_from > payload.period_to:
         raise HTTPException(
             status_code=422,
@@ -256,8 +299,7 @@ async def create_run(
             config,
         )
 
-        if mode == "shadow":
-            await queue_reconciliation_info(db, run)
+        await queue_reconciliation_info(db, run)
 
         db.add(
             AuditLog(
@@ -266,7 +308,7 @@ async def create_run(
                 entity="reconciliation_run",
                 entity_id=str(run.id),
                 details={
-                    "mode": mode,
+                    "mode": settings.custody_mode,
                     "config": run.config,
                 },
             )
@@ -285,7 +327,7 @@ async def create_run(
         loaded_run = result.scalar_one()
 
         row = _run_row(loaded_run)
-        row["mode"] = mode
+        row["mode"] = settings.custody_mode
 
         return row
 
@@ -305,6 +347,7 @@ async def run_detail(
     run_id: int,
     db: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     data = await reconciliation_report_data(
         db,
@@ -325,6 +368,7 @@ async def run_results(
     run_id: int,
     db: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_reader),
+    _: None = Depends(require_custody_shadow),
 ) -> list[dict]:
     run = await db.scalar(
         select(ReconciliationRun)
@@ -363,6 +407,7 @@ async def resolve_result(
     payload: ResolveRequest,
     db: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_operator),
+    _: None = Depends(require_custody_shadow),
 ) -> dict:
     result = await db.get(
         ReconciliationResult,

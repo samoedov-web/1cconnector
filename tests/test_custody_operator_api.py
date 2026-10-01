@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 import connector.api.custody_routes as custody_api
+from connector.config import settings
 from connector.custody.base import Capabilities, EntryGranularity
 from connector.custody.store import EntryPayload, StatementPayload
 from connector.db import get_session
@@ -37,7 +38,8 @@ def dt(day: int) -> datetime:
 
 
 @pytest.fixture
-async def api_env():
+async def api_env(monkeypatch):
+    monkeypatch.setattr(settings, "custody_mode", "shadow")
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         poolclass=StaticPool,
@@ -203,7 +205,7 @@ async def test_run_list_detail_and_results(api_env):
     client, _ = api_env
 
     response = await client.post(
-        "/api/v1/custody/reconciliation/runs?mode=shadow",
+        "/api/v1/custody/reconciliation/runs",
         json={
             "source_id": "mock-depo",
             "period_from": dt(1).isoformat(),

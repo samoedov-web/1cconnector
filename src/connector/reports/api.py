@@ -136,6 +136,10 @@ async def custody_reconciliation(
     user: CurrentUser = Depends(require_reader),
 ):
     """Акт сверки блокчейн ↔ депозитарий."""
+
+    from connector.api.custody_routes import require_custody_shadow
+
+    require_custody_shadow()
     from connector.custody.report import (
         reconciliation_report_data as custody_data,
         reconciliation_xlsx as custody_xlsx,
