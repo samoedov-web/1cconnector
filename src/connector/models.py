@@ -558,6 +558,13 @@ class ExpectedPayment(Base):
     # сам статус меняет только индексер, обнаружив транзакцию.
     sent_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sent_marked_by: Mapped[str] = mapped_column(String(128), default="")
+    # Хэш, возвращённый внешним кошельком после отправки.
+    # Используется индексером как приоритетный deterministic match.
+    expected_tx_hash: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
     # Алерт по таймеру уже поднят (чтобы не дублировать каждый цикл).
     sent_timeout_alerted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

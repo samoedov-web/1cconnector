@@ -282,3 +282,51 @@ async def test_timers_disabled_by_zero_config(env, monkeypatch):
     async with env["factory"]() as session:
         assert await expire_stale_approvals(session, now=NOW) == []
         assert await check_sent_timeouts(session, now=NOW) == []
+
+
+async def test_mark_sent_accepts_expected_tx_hash(env):
+    pid = await payment_id(env)
+    tx_hash = "0x" + "a" * 64
+
+    r = await env["client"].post(
+        f"/api/v1/aml/payments/{pid}/mark-sent",
+        headers=auth(env, "trez", Role.TREASURER),
+        json={"expected_tx_hash": tx_hash},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["expected_tx_hash"] == tx_hash
+
+    async with env["factory"]() as session:
+        payment = await session.get(ExpectedPayment, pid)
+
+        assert payment.expected_tx_hash == tx_hash
+        assert payment.sent_marked_by == "trez"
+        assert payment.sent_marked_at is not None
+
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "aml_marked_sent"
+            )
+        )
+
+        assert audit is not None
+        assert audit.details["expected_tx_hash"] == tx_hash
+
+
+async def test_mark_sent_rejects_invalid_tx_hash_length(env):
+    pid = await payment_id(env)
+
+    r = await env["client"].post(
+        f"/api/v1/aml/payments/{pid}/mark-sent",
+        headers=auth(env, "trez", Role.TREASURER),
+        json={"expected_tx_hash": "short"},
+    )
+
+    assert r.status_code == 400
+
+    async with env["factory"]() as session:
+        payment = await session.get(ExpectedPayment, pid)
+
+        assert payment.sent_marked_at is None
+        assert payment.expected_tx_hash is None

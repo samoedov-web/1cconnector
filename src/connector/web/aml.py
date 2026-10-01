@@ -144,9 +144,15 @@ async def decide(
     return {"status": new_status.value}
 
 
+class MarkSentIn(BaseModel):
+    # Необязателен: старый сценарий «Отправил» без хэша остаётся рабочим.
+    expected_tx_hash: str | None = None
+
+
 @router.post("/payments/{payment_id}/mark-sent")
 async def mark_sent(
     payment_id: int,
+    data: MarkSentIn | None = None,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_treasurer),
 ) -> dict:
@@ -171,6 +177,21 @@ async def mark_sent(
             detail="Отправка уже отмечена "
             f"({payment.sent_marked_by}, {payment.sent_marked_at.isoformat()})",
         )
+    expected_tx_hash = (
+        data.expected_tx_hash.strip()
+        if data is not None and data.expected_tx_hash
+        else None
+    )
+
+    if expected_tx_hash is not None:
+        if len(expected_tx_hash) < 16 or len(expected_tx_hash) > 128:
+            raise HTTPException(
+                status_code=400,
+                detail="Некорректная длина tx_hash",
+            )
+
+        payment.expected_tx_hash = expected_tx_hash
+
     payment.sent_marked_at = datetime.now(timezone.utc)
     payment.sent_marked_by = user.username
     session.add(
@@ -179,9 +200,15 @@ async def mark_sent(
             action="aml_marked_sent",
             entity="expected_payment",
             entity_id=str(payment.id),
-            details={"to_address": payment.to_address,
-                     "amount": str(payment.amount)},
+            details={
+                "to_address": payment.to_address,
+                "amount": str(payment.amount),
+                "expected_tx_hash": payment.expected_tx_hash,
+            },
         )
     )
     await session.commit()
-    return {"sent_marked_at": payment.sent_marked_at.isoformat()}
+    return {
+        "sent_marked_at": payment.sent_marked_at.isoformat(),
+        "expected_tx_hash": payment.expected_tx_hash,
+    }

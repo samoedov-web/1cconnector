@@ -207,6 +207,105 @@ async def link_outgoing_payments(
     for tx in outgoing:
         if tx.to_address.lower() in own_addresses:
             continue  # внутреннее перемещение между своими кошельками
+
+        # Path A: deterministic hash path.
+        # Если казначей сохранил tx_hash при отметке «Отправил», он имеет
+        # приоритет над эвристикой адрес + сумма.
+        hash_candidates = (
+            (
+                await session.execute(
+                    select(ExpectedPayment).where(
+                        ExpectedPayment.expected_tx_hash == tx.tx_hash,
+                        ExpectedPayment.network == network_code,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        if hash_candidates:
+            # Один hash не должен закрывать несколько ожиданий.
+            if len(hash_candidates) != 1:
+                await send_alert(
+                    session,
+                    "error",
+                    "AML: неоднозначный deterministic match по tx_hash",
+                    {
+                        "tx_hash": tx.tx_hash,
+                        "expected_payment_ids": [
+                            p.id for p in hash_candidates
+                        ],
+                    },
+                )
+                continue
+
+            hash_match = hash_candidates[0]
+
+            if hash_match.status != EPS.AML_APPROVED:
+                await send_alert(
+                    session,
+                    "error",
+                    "AML: tx_hash найден у неактивного ожидания",
+                    {
+                        "tx_hash": tx.tx_hash,
+                        "expected_payment_id": hash_match.id,
+                        "status": hash_match.status.value,
+                    },
+                )
+                continue
+
+            # Exact hash не отменяет контроль реквизитов платежа.
+            if hash_match.to_address.lower() != tx.to_address.lower():
+                await send_alert(
+                    session,
+                    "error",
+                    "AML: адрес транзакции не совпадает с ожиданием по tx_hash",
+                    {
+                        "tx_hash": tx.tx_hash,
+                        "expected_payment_id": hash_match.id,
+                        "expected_address": hash_match.to_address,
+                        "actual_address": tx.to_address,
+                    },
+                )
+                continue
+
+            if not amount_within_tolerance(hash_match, tx.amount):
+                await send_alert(
+                    session,
+                    "warning",
+                    "AML: сумма транзакции не совпадает с ожиданием по tx_hash",
+                    {
+                        "tx_hash": tx.tx_hash,
+                        "expected_payment_id": hash_match.id,
+                        "expected": str(hash_match.amount),
+                        "actual": str(tx.amount),
+                    },
+                )
+                continue
+
+            transition(hash_match, EPS.SENT)
+            hash_match.transaction_id = tx.id
+
+            session.add(
+                AuditLog(
+                    actor="indexer",
+                    action="aml_payment_sent",
+                    entity="expected_payment",
+                    entity_id=str(hash_match.id),
+                    details={
+                        "tx_hash": tx.tx_hash,
+                        "amount": str(tx.amount),
+                        "to_address": tx.to_address,
+                        "match_method": "expected_tx_hash",
+                    },
+                )
+            )
+
+            linked.append(hash_match)
+            continue
+
+        # Path B: существующий fallback по адресу + сумма ± tolerance.
         candidates = (
             (
                 await session.execute(
