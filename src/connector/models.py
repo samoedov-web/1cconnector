@@ -578,6 +578,8 @@ class OnecDocType(enum.StrEnum):
     DISPOSAL = "disposal"  # Выбытие цифровой валюты
     REVALUATION = "revaluation"  # Переоценка цифровой валюты
     FEE = "fee"  # Комиссия сети (отдельная статья расходов)
+    # Информационная запись shadow-сверки; не бухгалтерский документ.
+    RECONCILIATION = "reconciliation_info"
 
 
 class OnecDocStatus(enum.StrEnum):

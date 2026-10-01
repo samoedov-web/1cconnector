@@ -28,6 +28,7 @@ import connector.custody.mock_adapter  # noqa: F401
 
 from connector.config import settings
 from connector.custody.engine import ReconConfig
+from connector.custody.onec import queue_reconciliation_info
 from connector.custody.report import (
     DISCREPANCY_STATUSES,
     STATUS_RU,
@@ -254,6 +255,9 @@ async def create_run(
             payload.period_to,
             config,
         )
+
+        if mode == "shadow":
+            await queue_reconciliation_info(db, run)
 
         db.add(
             AuditLog(
