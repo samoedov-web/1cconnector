@@ -12,10 +12,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from connector.custody.base import DepositoryAdapter
     from connector.aml.base import AmlAdapter
     from connector.indexer.base import ChainAdapter
 
 _chain_sources: dict[str, type["ChainAdapter"]] = {}
+_custody_sources: dict[str, type["DepositoryAdapter"]] = {}
 _aml_sources: dict[str, type["AmlAdapter"]] = {}
 
 
@@ -69,5 +71,31 @@ def create_aml_source(source_id: str, **config) -> "AmlAdapter":
         raise LookupError(
             f"Нет зарегистрированного AML-провайдера «{source_id}»; "
             f"доступны: {', '.join(aml_source_codes()) or '—'}"
+        ) from None
+    return cls.from_config(**config)
+
+
+def register_custody_source(source_id: str):
+    """Зарегистрировать адаптер депозитария под его id (п. 4.3 спеки)."""
+
+    def decorator(cls):
+        _custody_sources[source_id] = cls
+        return cls
+
+    return decorator
+
+
+def custody_source_codes() -> list[str]:
+    return sorted(_custody_sources)
+
+
+def create_custody_source(source_id: str, **config) -> "DepositoryAdapter":
+    """Создать адаптер депозитария; LookupError для незарегистрированного id."""
+    try:
+        cls = _custody_sources[source_id]
+    except KeyError:
+        raise LookupError(
+            f"Нет зарегистрированного адаптера депозитария «{source_id}»; "
+            f"доступны: {', '.join(custody_source_codes()) or '—'}"
         ) from None
     return cls.from_config(**config)
