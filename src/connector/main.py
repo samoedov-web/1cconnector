@@ -21,6 +21,7 @@ from sqlalchemy import func, select, text
 
 from connector import __version__
 from connector.config import settings
+from connector.api.custody_routes import router as custody_router
 from connector.db import SessionFactory, engine
 from connector.models import Base, Role, User
 from connector.onec.api import router as onec_router
@@ -88,6 +89,7 @@ app.include_router(transactions_router)
 app.include_router(directory_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
+app.include_router(custody_router)
 
 
 @app.get("/health")
