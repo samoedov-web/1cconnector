@@ -25,7 +25,8 @@ class IssuerRiskResult:
     asset_symbol: str
     contract_address: str
     network: str
-    risk_status: str  # normal, freeze_warning, frozen
+    risk_status: str  # legacy values пока сохраняются до отдельной normalization
+    provider_health: str  # AVAILABLE, DEGRADED, UNAVAILABLE
     reason: str | None
     checked_at: datetime
     raw_payload: dict
@@ -61,6 +62,7 @@ class MockIssuerRiskAdapter(BaseAdapter):
             contract_address="0x...",
             network="ethereum",
             risk_status="normal",
+            provider_health="AVAILABLE",
             reason=None,
             checked_at=datetime.utcnow(),
             raw_payload=raw,

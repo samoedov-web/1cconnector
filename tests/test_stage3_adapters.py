@@ -15,3 +15,11 @@ async def test_issuer_mock():
     res = await adapter.check("USDT")
     assert res.risk_status == "normal"
     assert res.asset_symbol == "USDT"
+
+
+@pytest.mark.asyncio
+async def test_issuer_mock_reports_provider_health():
+    adapter = MockIssuerRiskAdapter()
+    res = await adapter.check("USDT")
+
+    assert res.provider_health == "AVAILABLE"

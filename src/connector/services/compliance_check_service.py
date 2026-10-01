@@ -40,6 +40,7 @@ class ComplianceCheckService:
             contract_address=result.contract_address,
             network_id=asset.network_id,
             risk_status=result.risk_status,
+            provider_health=result.provider_health,
             source="mock_issuer",
             payload=json.dumps(result.raw_payload),
             checksum=result.checksum,

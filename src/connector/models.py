@@ -772,6 +772,9 @@ class IssuerRiskCheck(Base):
     contract_address: Mapped[str] = mapped_column(String(128))
     network_id: Mapped[int] = mapped_column(ForeignKey("networks.id"))
     risk_status: Mapped[str] = mapped_column(String(64))
+    provider_health: Mapped[str] = mapped_column(
+        String(32), default="AVAILABLE"
+    )
     source: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict] = mapped_column(JSON)
     checksum: Mapped[str] = mapped_column(String(64))
