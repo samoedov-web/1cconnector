@@ -16,10 +16,6 @@ class Settings(BaseSettings):
     # Аутентификация обмена с 1С — токен фонового задания синхронизации.
     onec_exchange_token: str = Field(default="", description="Токен для HTTP-обмена с 1С")
 
-    # Порог финальности per-network (учётная финальность = договорная финальность,
-    # см. п. 3 ТЗ). Переопределяется в таблице networks.
-    default_finality: dict[str, int] = {"tron": 19, "ethereum": 12}
-
     # Интервал опроса индексера, сек.
     indexer_poll_interval: int = 60
 
