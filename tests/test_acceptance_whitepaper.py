@@ -74,7 +74,7 @@ def test_wp_10_2_reconciliation_modes():
     """Whitepaper §10.2: Режимы сверки off/shadow/active."""
     # Проверяем наличие компонента Reconciliation.jsx
     import os
-    recon_path = "src/web/src/components/Reconciliation.jsx"
+    recon_path = "web/src/pages/Reconciliation.jsx"
     assert os.path.exists(recon_path), f"Файл {recon_path} отсутствует"
     
     with open(recon_path, 'r') as f:
