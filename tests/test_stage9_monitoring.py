@@ -1,21 +1,22 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from connector.monitoring.alerts import MonitoringService
-from connector.models import ExpectedPayment, Alert
+from connector.models import ExpectedPayment, ExpectedPaymentStatus, Alert
 
 @pytest.mark.asyncio
 async def test_sent_timeout_detection(async_session, sample_invoice):
     service = MonitoringService(async_session)
     
     # Создаем платеж, отправленный 40 минут назад (таймаут 30 мин)
-    old_time = datetime.utcnow() - timedelta(minutes=40)
+    old_time = datetime.now(timezone.utc) - timedelta(minutes=40)
     payment = ExpectedPayment(
         invoice_id=sample_invoice.id,
         to_address="0x...",
         network="ethereum",
         amount=100,
         currency="USDT",
-        status="sent",
+        tolerance=0.01,
+        status=ExpectedPaymentStatus.SENT,
         sent_marked_at=old_time,
         sent_timeout_alerted=False
     )

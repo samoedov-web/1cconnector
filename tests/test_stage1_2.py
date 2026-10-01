@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timezone
 from connector.models import Operation, OperationState, RegulatoryVersion, CustodyStatement
 
 @pytest.mark.asyncio
@@ -10,8 +11,8 @@ async def test_operation_creation(db_session):
 
 @pytest.mark.asyncio
 async def test_regulatory_version_unique_constraint(db_session):
-    rv1 = RegulatoryVersion(code="RV1", source_document="doc", effective_from="2024-01-01", checksum="abc")
-    rv2 = RegulatoryVersion(code="RV1", source_document="doc2", effective_from="2024-01-01", checksum="def")
+    rv1 = RegulatoryVersion(code="RV1", source_document="doc", effective_from=datetime(2024, 1, 1, tzinfo=timezone.utc), checksum="abc")
+    rv2 = RegulatoryVersion(code="RV1", source_document="doc2", effective_from=datetime(2024, 1, 1, tzinfo=timezone.utc), checksum="def")
     db_session.add(rv1)
     await db_session.flush()
     db_session.add(rv2)

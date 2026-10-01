@@ -3,7 +3,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from connector.models import OnecDocType, OnecDocStatus, Lot
 from connector.onec.exchange import OneCExchangeService
-from connector.reports.tax_registry import TaxRegistryService, TaxLot
+from connector.reports.tax_registry import TaxRegistryService, TaxLot, TaxDisposal
 
 @pytest.mark.asyncio
 async def test_create_receipt_doc(async_session, sample_transaction):
@@ -17,14 +17,28 @@ async def test_create_receipt_doc(async_session, sample_transaction):
     assert doc.idempotency_key is not None
 
 @pytest.mark.asyncio
-async def test_fifo_calculation(async_session, sample_asset):
+async def test_fifo_calculation(async_session, sample_asset, sample_transaction):
     registry = TaxRegistryService(async_session)
     
     # Создаем две партии: старая (дешевле) и новая (дороже)
-    lot1 = Lot(asset_id=sample_asset.id, quantity=Decimal(100), remaining=Decimal(100), 
-               unit_cost_rub=Decimal(50), acquired_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
-    lot2 = Lot(asset_id=sample_asset.id, quantity=Decimal(100), remaining=Decimal(100), 
-               unit_cost_rub=Decimal(60), acquired_at=datetime(2025, 2, 1, tzinfo=timezone.utc))
+    lot1 = Lot(
+        transaction_id=sample_transaction.id,
+        asset_id=sample_asset.id,
+        wallet_id=sample_transaction.wallet_id,
+        quantity=Decimal(100),
+        remaining=Decimal(100),
+        unit_cost_rub=Decimal(50),
+        acquired_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    lot2 = Lot(
+        transaction_id=sample_transaction.id,
+        asset_id=sample_asset.id,
+        wallet_id=sample_transaction.wallet_id,
+        quantity=Decimal(100),
+        remaining=Decimal(100),
+        unit_cost_rub=Decimal(60),
+        acquired_at=datetime(2025, 2, 1, tzinfo=timezone.utc),
+    )
     
     async_session.add_all([lot1, lot2])
     await async_session.flush()

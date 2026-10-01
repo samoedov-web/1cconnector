@@ -10,14 +10,39 @@ async def test_transition_approved_success(async_session, sample_operation):
     service = OperationService(async_session)
     
     # Создаем положительные решения
-    aml = ComplianceDecision(operation_id=sample_operation.id, decision_type="aml", decision="approved", decided_at=datetime.now(timezone.utc))
-    registry = RegistrySnapshot(operation_id=sample_operation.id, status_result="active", observed_at=datetime.now(timezone.utc))
-    issuer = IssuerRiskCheck(operation_id=sample_operation.id, risk_status="normal", checked_at=datetime.now(timezone.utc))
+    aml = ComplianceDecision(
+        operation_id=sample_operation.id,
+        decision_type="aml",
+        decision="approved",
+        decided_by="test",
+        decided_at=datetime.now(timezone.utc),
+    )
+    registry = RegistrySnapshot(
+        operation_id=sample_operation.id,
+        subject_reference="test-subject",
+        source="test-registry",
+        status_result="active",
+        snapshot_payload={},
+        checksum="test-checksum",
+        observed_at=datetime.now(timezone.utc),
+    )
+    issuer = IssuerRiskCheck(
+        operation_id=sample_operation.id,
+        asset_id=sample_operation.asset_id,
+        contract_address="0xTEST",
+        network_id=sample_operation.network_id,
+        risk_status="normal",
+        source="test-issuer",
+        payload={},
+        checksum="test-checksum",
+        checked_at=datetime.now(timezone.utc),
+    )
     
     async_session.add_all([aml, registry, issuer])
     await async_session.flush()
     
-    # Пробуем перейти в APPROVED
+    # Пробуем перейти в APPROVED из допустимого состояния.
+    sample_operation.state = OperationState.ISSUER_CHECKED
     op = await service.transition(sample_operation, OperationState.APPROVED)
     assert op.state == OperationState.APPROVED
 
@@ -27,13 +52,38 @@ async def test_transition_approved_fail_aml(async_session, sample_operation):
     service = OperationService(async_session)
     
     # AML rejected
-    aml = ComplianceDecision(operation_id=sample_operation.id, decision_type="aml", decision="rejected", decided_at=datetime.now(timezone.utc))
-    registry = RegistrySnapshot(operation_id=sample_operation.id, status_result="active", observed_at=datetime.now(timezone.utc))
-    issuer = IssuerRiskCheck(operation_id=sample_operation.id, risk_status="normal", checked_at=datetime.now(timezone.utc))
+    aml = ComplianceDecision(
+        operation_id=sample_operation.id,
+        decision_type="aml",
+        decision="rejected",
+        decided_by="test",
+        decided_at=datetime.now(timezone.utc),
+    )
+    registry = RegistrySnapshot(
+        operation_id=sample_operation.id,
+        subject_reference="test-subject",
+        source="test-registry",
+        status_result="active",
+        snapshot_payload={},
+        checksum="test-checksum",
+        observed_at=datetime.now(timezone.utc),
+    )
+    issuer = IssuerRiskCheck(
+        operation_id=sample_operation.id,
+        asset_id=sample_operation.asset_id,
+        contract_address="0xTEST",
+        network_id=sample_operation.network_id,
+        risk_status="normal",
+        source="test-issuer",
+        payload={},
+        checksum="test-checksum",
+        checked_at=datetime.now(timezone.utc),
+    )
     
     async_session.add_all([aml, registry, issuer])
     await async_session.flush()
     
+    sample_operation.state = OperationState.ISSUER_CHECKED
     with pytest.raises(ComplianceGateError):
         await service.transition(sample_operation, OperationState.APPROVED)
 
