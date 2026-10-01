@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # Webhook алертов мониторинга (POST JSON); пусто — только журнал в БД.
     alert_webhook_url: str = ""
 
+    # --- Депозитарная сверка ---
+    custody_source_id: str = "mock-depo"
+    custody_fixtures_dir: str = "fixtures/custody"
+
     # --- AML (specs/aml-adapter.md) ---
     # Провайдер скрининга адресов (id в реестре aml-источников) и его
     # конфигурация; до подключения реального провайдера — мок с фикстурами.
