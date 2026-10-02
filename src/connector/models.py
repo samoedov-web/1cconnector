@@ -675,6 +675,23 @@ class AuditLog(Base):
 
 # --- STAGE 1 & 2 CANONICAL ENTITIES ---
 
+class IssuerRiskStatus(enum.StrEnum):
+    """Канонический риск эмитента по roadmap v2.1."""
+
+    OK = "OK"
+    FREEZE = "FREEZE"
+    BLACKLIST = "BLACKLIST"
+    UNKNOWN = "UNKNOWN"
+
+
+class IssuerProviderHealth(enum.StrEnum):
+    """Доступность issuer-risk провайдера; не является риском актива."""
+
+    AVAILABLE = "AVAILABLE"
+    DEGRADED = "DEGRADED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
 class OperationState(enum.StrEnum):
     DRAFT = "draft"
     COMPLIANCE_PENDING = "compliance_pending"

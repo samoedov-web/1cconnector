@@ -18,5 +18,5 @@ async def test_issuer_check_persists_provider_health(
 
     await async_session.flush()
 
-    assert check.risk_status == "normal"
+    assert check.risk_status == "OK"
     assert check.provider_health == "AVAILABLE"

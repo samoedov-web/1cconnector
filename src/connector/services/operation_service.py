@@ -8,8 +8,8 @@ from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from connector.models import (
-    Operation, OperationState, ComplianceDecision, RegistrySnapshot, 
-    IssuerRiskCheck, EvidenceLink, RegulatoryVersion
+    Operation, OperationState, ComplianceDecision, RegistrySnapshot,
+    IssuerRiskCheck, EvidenceLink, RegulatoryVersion, IssuerRiskStatus
 )
 from datetime import datetime, timezone
 
@@ -92,8 +92,22 @@ class OperationService:
 
         # 3. Issuer Risk Check
         issuer_check = await self._get_latest_issuer_check(operation)
-        if not issuer_check or issuer_check.risk_status == "frozen":
-            raise ComplianceGateError(f"Issuer risk check failed for operation {operation.id}")
+        if not issuer_check:
+            raise ComplianceGateError(
+                f"Issuer risk check missing for operation {operation.id}"
+            )
+
+        # Новые записи используют canonical v2.1 status.
+        # Legacy normal/frozen остаются читаемыми до отдельной data migration.
+        allowed_issuer_statuses = {
+            IssuerRiskStatus.OK.value,
+            "normal",
+        }
+        if issuer_check.risk_status not in allowed_issuer_statuses:
+            raise ComplianceGateError(
+                f"Issuer risk check failed for operation {operation.id}: "
+                f"{issuer_check.risk_status}"
+            )
 
     async def _get_latest_decision(self, operation: Operation, decision_type: str) -> Optional[ComplianceDecision]:
         result = await self.session.execute(

@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 from connector.adapters.stage3.adapters import MockRegistryAdapter, MockIssuerRiskAdapter
+from connector.models import IssuerProviderHealth, IssuerRiskStatus
 
 @pytest.mark.asyncio
 async def test_registry_mock():
@@ -13,7 +14,7 @@ async def test_registry_mock():
 async def test_issuer_mock():
     adapter = MockIssuerRiskAdapter()
     res = await adapter.check("USDT")
-    assert res.risk_status == "normal"
+    assert res.risk_status == IssuerRiskStatus.OK
     assert res.asset_symbol == "USDT"
 
 
@@ -22,4 +23,4 @@ async def test_issuer_mock_reports_provider_health():
     adapter = MockIssuerRiskAdapter()
     res = await adapter.check("USDT")
 
-    assert res.provider_health == "AVAILABLE"
+    assert res.provider_health == IssuerProviderHealth.AVAILABLE
