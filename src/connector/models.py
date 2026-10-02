@@ -740,6 +740,27 @@ class Operation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
+class OperationInvoice(Base):
+    """Связь N:M между canonical Operation и входящими в неё Invoice.
+
+    Legacy Operation.invoice_id пока сохраняется для совместимости.
+    Исторический backfill в эту таблицу выполняется отдельным решением DB-02.
+    """
+
+    __tablename__ = "operation_invoices"
+    __table_args__ = (
+        UniqueConstraint("operation_id", "invoice_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
+
 class EvidenceLink(Base):
     __tablename__ = "evidence_links"
     id: Mapped[int] = mapped_column(primary_key=True)
