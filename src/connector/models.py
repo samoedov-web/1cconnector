@@ -210,6 +210,10 @@ class Transaction(Base):
     __table_args__ = (UniqueConstraint("network_id", "tx_hash", "log_index"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operations.id"),
+        nullable=True,
+    )
     network_id: Mapped[int] = mapped_column(ForeignKey("networks.id"))
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
     wallet_id: Mapped[int] = mapped_column(ForeignKey("wallets.id"))
@@ -287,6 +291,10 @@ class Match(Base):
     __tablename__ = "matches"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operations.id"),
+        nullable=True,
+    )
     transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"))
     counterparty_id: Mapped[int | None] = mapped_column(ForeignKey("counterparties.id"))
     contract_id: Mapped[int | None] = mapped_column(ForeignKey("contracts.id"))
@@ -538,6 +546,10 @@ class ExpectedPayment(Base):
     __table_args__ = (UniqueConstraint("invoice_id", "to_address"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operations.id"),
+        nullable=True,
+    )
     invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"))
     to_address: Mapped[str] = mapped_column(String(128))
     network: Mapped[str] = mapped_column(String(32))
