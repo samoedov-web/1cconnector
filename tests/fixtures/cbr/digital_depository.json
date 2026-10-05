@@ -1,0 +1,12 @@
+{
+  "subject_ref": "7800000000",
+  "registry_type": "DIGITAL_DEPOSITORY",
+  "registry_entry_id": "CD-TEST-001",
+  "status": "active",
+  "admission_mode": "SIMPLIFIED",
+  "valid_from": "2026-10-05T00:00:00+03:00",
+  "valid_to": null,
+  "application_id": "APP-TEST-002",
+  "admission_date": "2026-10-05T00:00:00+03:00",
+  "legal_basis": "7429-U test fixture"
+}
