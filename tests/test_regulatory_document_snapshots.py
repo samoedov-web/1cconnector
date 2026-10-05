@@ -112,3 +112,42 @@ async def test_legacy_registry_snapshot_contract_remains_valid(
     assert snapshot.registry_type is None
     assert snapshot.registry_entry_id is None
     assert snapshot.admission_mode is None
+
+
+@pytest.mark.asyncio
+async def test_regulatory_document_history_is_extended_with_new_snapshot(
+    async_session,
+):
+    first = RegulatoryDocumentSnapshot(
+        document_type="CBR_REGULATION",
+        issuer="Bank of Russia",
+        document_number="7429-U",
+        document_date=datetime(2026, 8, 27, tzinfo=timezone.utc),
+        status="PUBLISHED",
+        source="CBR",
+        checked_at=datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc),
+        raw_payload={"status": "published"},
+        checksum="5" * 64,
+    )
+    async_session.add(first)
+    await async_session.flush()
+
+    second = RegulatoryDocumentSnapshot(
+        document_type="CBR_REGULATION",
+        issuer="Bank of Russia",
+        document_number="7429-U",
+        document_date=datetime(2026, 8, 27, tzinfo=timezone.utc),
+        status="EFFECTIVE",
+        source="CBR",
+        checked_at=datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc),
+        raw_payload={"status": "effective"},
+        checksum="6" * 64,
+        supersedes_snapshot_id=first.id,
+    )
+    async_session.add(second)
+    await async_session.flush()
+
+    assert first.id != second.id
+    assert first.status == "PUBLISHED"
+    assert second.status == "EFFECTIVE"
+    assert second.supersedes_snapshot_id == first.id
