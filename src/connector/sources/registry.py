@@ -15,10 +15,12 @@ if TYPE_CHECKING:
     from connector.custody.base import DepositoryAdapter
     from connector.aml.base import AmlAdapter
     from connector.indexer.base import ChainAdapter
+    from connector.adapters.stage3.adapters import BaseAdapter
 
 _chain_sources: dict[str, type["ChainAdapter"]] = {}
 _custody_sources: dict[str, type["DepositoryAdapter"]] = {}
 _aml_sources: dict[str, type["AmlAdapter"]] = {}
+_registry_sources: dict[str, type["BaseAdapter"]] = {}
 
 
 def register_chain_source(network_code: str):
@@ -99,3 +101,34 @@ def create_custody_source(source_id: str, **config) -> "DepositoryAdapter":
             f"доступны: {', '.join(custody_source_codes()) or '—'}"
         ) from None
     return cls.from_config(**config)
+
+def register_registry_source(source_id: str):
+    """Зарегистрировать провайдера официального/инфраструктурного реестра."""
+
+    def decorator(cls):
+        _registry_sources[source_id] = cls
+        return cls
+
+    return decorator
+
+
+def registry_source_codes() -> list[str]:
+    return sorted(_registry_sources)
+
+
+def create_registry_source(source_id: str, **config) -> "BaseAdapter":
+    """Создать registry adapter; LookupError для неизвестного provider id."""
+    try:
+        cls = _registry_sources[source_id]
+    except KeyError:
+        raise LookupError(
+            f"Нет зарегистрированного registry-провайдера «{source_id}»; "
+            f"доступны: {', '.join(registry_source_codes()) or '—'}"
+        ) from None
+
+    from_config = getattr(cls, "from_config", None)
+    if callable(from_config):
+        return from_config(**config)
+
+    return cls(**config)
+

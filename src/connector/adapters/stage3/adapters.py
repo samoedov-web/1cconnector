@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from connector.models import IssuerProviderHealth, IssuerRiskStatus
+from connector.sources.registry import (
+    create_registry_source,
+    register_registry_source,
+)
 
 @dataclass
 class RegistryResult:
@@ -59,6 +63,7 @@ class BaseAdapter(ABC):
     async def check(self, ref: str) -> Any:
         pass
 
+@register_registry_source("mock")
 class MockRegistryAdapter(BaseAdapter):
     """Deterministic registry provider for tests/dev."""
 
@@ -109,9 +114,11 @@ class MockIssuerRiskAdapter(BaseAdapter):
 
 # Фабрика для получения адаптеров
 def get_registry_adapter(provider: str = "mock") -> BaseAdapter:
-    if provider == "mock":
-        return MockRegistryAdapter()
-    raise ValueError(f"Unknown provider: {provider}")
+    """Backward-compatible wrapper around the canonical source registry."""
+    try:
+        return create_registry_source(provider)
+    except LookupError as exc:
+        raise ValueError(f"Unknown provider: {provider}") from exc
 
 def get_issuer_risk_adapter(provider: str = "mock") -> BaseAdapter:
     if provider == "mock":
