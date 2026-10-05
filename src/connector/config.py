@@ -55,8 +55,9 @@ class Settings(BaseSettings):
     custody_fixtures_dir: str = "fixtures/custody"
 
     # --- Registry intelligence ---
-    # Источник реестровой проверки. Пока production CBR adapter не подключён,
-    # tests/dev используют deterministic mock.
+    # Источник реестровой проверки:
+    # mock    — deterministic provider для tests/dev;
+    # cbr-ois — официальный XLSX-реестр ОИС Банка России.
     registry_source_id: str = "mock"
 
     # --- AML (specs/aml-adapter.md) ---

@@ -115,6 +115,13 @@ class MockIssuerRiskAdapter(BaseAdapter):
 # Фабрика для получения адаптеров
 def get_registry_adapter(provider: str = "mock") -> BaseAdapter:
     """Backward-compatible wrapper around the canonical source registry."""
+
+    # Production CBR providers live in a separate module. Import lazily so
+    # registration happens without introducing an import cycle:
+    # cbr_registry -> RegistryResult from this module.
+    if provider.startswith("cbr-"):
+        from connector.adapters.stage3 import cbr_registry  # noqa: F401
+
     try:
         return create_registry_source(provider)
     except LookupError as exc:

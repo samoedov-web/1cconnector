@@ -19,6 +19,7 @@ from typing import Protocol
 import httpx
 
 from connector.adapters.stage3.adapters import RegistryResult
+from connector.sources.registry import register_registry_source
 
 
 class CBRRegistryType(StrEnum):
@@ -175,3 +176,43 @@ class CBRRegistryAdapter:
 
     async def aclose(self) -> None:
         await self.transport.aclose()
+
+CBR_OIS_SOURCE_PATH = (
+    "/vfs/finmarkets/files/supervision/list_ois.xlsx"
+)
+
+
+@register_registry_source("cbr-ois")
+class CBROISRegistryAdapter(CBRRegistryAdapter):
+    """Production provider for the official Bank of Russia OIS registry."""
+
+    source_name = "cbr-ois"
+
+    def __init__(
+        self,
+        *,
+        base_url: str = "https://www.cbr.ru",
+        timeout_seconds: float = 15.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        # Local import avoids making the generic transport module depend
+        # on a concrete parser at import time.
+        from connector.adapters.stage3.cbr_parser import CBROISXlsxParser
+
+        super().__init__(
+            registry_type=CBRRegistryType.INFORMATION_SYSTEM_OPERATOR,
+            source_path=CBR_OIS_SOURCE_PATH,
+            parser=CBROISXlsxParser(),
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            transport=transport,
+        )
+
+    @classmethod
+    def from_config(cls, **config) -> "CBROISRegistryAdapter":
+        return cls(
+            base_url=config.get("base_url") or "https://www.cbr.ru",
+            timeout_seconds=float(config.get("timeout_seconds", 15)),
+            transport=config.get("transport"),
+        )
+
