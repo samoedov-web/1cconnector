@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from connector.models import Operation, RegistrySnapshot, IssuerRiskCheck, Asset
+from connector.config import settings
 from connector.adapters.stage3.adapters import (
     get_registry_adapter, 
     get_issuer_risk_adapter, 
@@ -12,10 +13,23 @@ from connector.adapters.stage3.adapters import (
 import json
 
 class ComplianceCheckService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        registry_adapter=None,
+        issuer_adapter=None,
+    ):
         self.session = session
-        self.registry_adapter = get_registry_adapter("mock")
-        self.issuer_adapter = get_issuer_risk_adapter("mock")
+        self.registry_adapter = (
+            registry_adapter
+            if registry_adapter is not None
+            else get_registry_adapter(settings.registry_source_id)
+        )
+        self.issuer_adapter = (
+            issuer_adapter
+            if issuer_adapter is not None
+            else get_issuer_risk_adapter("mock")
+        )
 
     async def run_registry_check(
         self,

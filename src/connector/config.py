@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     custody_source_id: str = "mock-depo"
     custody_fixtures_dir: str = "fixtures/custody"
 
+    # --- Registry intelligence ---
+    # Источник реестровой проверки. Пока production CBR adapter не подключён,
+    # tests/dev используют deterministic mock.
+    registry_source_id: str = "mock"
+
     # --- AML (specs/aml-adapter.md) ---
     # Провайдер скрининга адресов (id в реестре aml-источников) и его
     # конфигурация; до подключения реального провайдера — мок с фикстурами.
