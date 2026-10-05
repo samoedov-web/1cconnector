@@ -131,4 +131,3 @@ def create_registry_source(source_id: str, **config) -> "BaseAdapter":
         return from_config(**config)
 
     return cls(**config)
-
