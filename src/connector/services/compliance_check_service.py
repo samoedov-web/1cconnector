@@ -17,18 +17,36 @@ class ComplianceCheckService:
         self.registry_adapter = get_registry_adapter("mock")
         self.issuer_adapter = get_issuer_risk_adapter("mock")
 
-    async def run_registry_check(self, operation: Operation, subject_ref: str) -> RegistrySnapshot:
+    async def run_registry_check(
+        self,
+        operation: Operation,
+        subject_ref: str,
+    ) -> RegistrySnapshot:
         result: RegistryResult = await self.registry_adapter.check(subject_ref)
+
         snapshot = RegistrySnapshot(
             operation_id=operation.id,
-            subject_reference=subject_ref,
-            source="mock_cbr",
+            subject_reference=result.subject_ref,
+            source=result.source,
             status_result=result.status,
-            snapshot_payload=json.dumps(result.raw_payload),
+            snapshot_payload=result.raw_payload,
             checksum=result.checksum,
             observed_at=result.checked_at,
-            regulatory_version_id=operation.regulatory_version_id
+            regulatory_version_id=operation.regulatory_version_id,
+
+            registry_type=result.registry_type,
+            registry_entry_id=(
+                result.registry_entry_id or result.record_number
+            ),
+            valid_from=result.valid_from,
+            valid_to=result.valid_to,
+            admission_mode=result.admission_mode,
+            application_id=result.application_id,
+            admission_date=result.admission_date,
+            legal_basis=result.legal_basis,
+            source_url=result.source_url,
         )
+
         self.session.add(snapshot)
         return snapshot
 

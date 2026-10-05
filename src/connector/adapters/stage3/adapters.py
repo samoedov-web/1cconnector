@@ -7,20 +7,40 @@ import hashlib
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from connector.models import IssuerProviderHealth, IssuerRiskStatus
 
 @dataclass
 class RegistryResult:
+    """Normalized result returned by a registry provider.
+
+    `record_number` is retained as a legacy/provider-facing field.
+    `registry_entry_id` is the canonical normalized identifier persisted
+    into RegistrySnapshot.
+    """
+
     subject_ref: str
-    status: str  # active, suspended, liquidated, not_found
-    registry_type: str  # cbr_finorg, licensed_operator
+    status: str
+    registry_type: str
     record_number: str | None
     checked_at: datetime
     raw_payload: dict
     checksum: str
+
+    source: str = "unknown"
+    source_url: str | None = None
+
+    registry_entry_id: str | None = None
+    admission_mode: str | None = None
+
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+
+    application_id: str | None = None
+    admission_date: datetime | None = None
+    legal_basis: str | None = None
 
 @dataclass
 class IssuerRiskResult:
@@ -40,18 +60,34 @@ class BaseAdapter(ABC):
         pass
 
 class MockRegistryAdapter(BaseAdapter):
-    """Mock для реестров ЦБ/операторов."""
+    """Deterministic registry provider for tests/dev."""
+
     async def check(self, ref: str) -> RegistryResult:
-        raw = {"subject": ref, "status": "active", "source": "mock_cbr"}
-        checksum = hashlib.sha256(json.dumps(raw, sort_keys=True).encode()).hexdigest()
+        raw = {
+            "subject": ref,
+            "status": "active",
+            "source": "mock_cbr",
+            "registry_type": "DIGITAL_CURRENCY_EXCHANGE",
+            "registry_entry_id": "MOCK-12345",
+            "admission_mode": "GENERAL",
+        }
+        checksum = hashlib.sha256(
+            json.dumps(raw, sort_keys=True).encode()
+        ).hexdigest()
+
         return RegistryResult(
             subject_ref=ref,
             status="active",
-            registry_type="cbr_finorg",
+            registry_type="DIGITAL_CURRENCY_EXCHANGE",
             record_number="MOCK-12345",
-            checked_at=datetime.utcnow(),
+            registry_entry_id="MOCK-12345",
+            admission_mode="GENERAL",
+            checked_at=datetime.now(timezone.utc),
             raw_payload=raw,
-            checksum=checksum
+            checksum=checksum,
+            source="mock_cbr",
+            source_url="https://example.invalid/mock-cbr-registry",
+            legal_basis="mock-registry-fixture",
         )
 
 class MockIssuerRiskAdapter(BaseAdapter):
