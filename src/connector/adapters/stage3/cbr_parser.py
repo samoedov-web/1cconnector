@@ -345,4 +345,3 @@ class CBROISXlsxParser:
             source="CBR",
             source_url=response.source_url,
         )
-
