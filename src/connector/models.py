@@ -738,6 +738,54 @@ class RegulatoryVersion(Base):
     status: Mapped[str] = mapped_column(String(32), default="draft") # draft, published, effective, superseded
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class RegulatoryDocumentSnapshot(Base):
+    """Historical evidence of a regulatory document state at check time.
+
+    This is intentionally separate from RegulatoryVersion:
+    RegulatoryVersion identifies the policy/methodology version applied to an
+    operation, while this model preserves externally observed document facts.
+    """
+
+    __tablename__ = "regulatory_document_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    document_type: Mapped[str] = mapped_column(String(64))
+    issuer: Mapped[str] = mapped_column(String(128))
+
+    document_number: Mapped[str] = mapped_column(String(128))
+    document_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    registration_number: Mapped[str | None] = mapped_column(String(128))
+    registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    status: Mapped[str] = mapped_column(String(32))
+
+    source: Mapped[str] = mapped_column(String(128))
+    source_url: Mapped[str | None] = mapped_column(Text)
+
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    raw_payload: Mapped[dict] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))
+
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
+    supersedes_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_document_snapshots.id")
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
 class Operation(Base):
     __tablename__ = "operations"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -805,6 +853,8 @@ class ComplianceDecision(Base):
 class RegistrySnapshot(Base):
     __tablename__ = "registry_snapshots"
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Existing canonical operation-scoped evidence contract.
     operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"))
     subject_reference: Mapped[str] = mapped_column(String(256))
     source: Mapped[str] = mapped_column(String(128))
@@ -812,7 +862,25 @@ class RegistrySnapshot(Base):
     snapshot_payload: Mapped[dict] = mapped_column(JSON)
     checksum: Mapped[str] = mapped_column(String(64))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    regulatory_version_id: Mapped[int | None] = mapped_column(ForeignKey("regulatory_versions.id"))
+    regulatory_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulatory_versions.id")
+    )
+
+    # Operational registry evidence introduced for the CBR registry regime.
+    # Nullable for backwards compatibility with already stored/test fixtures.
+    registry_type: Mapped[str | None] = mapped_column(String(64))
+    registry_entry_id: Mapped[str | None] = mapped_column(String(128))
+
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    admission_mode: Mapped[str | None] = mapped_column(String(32))
+
+    application_id: Mapped[str | None] = mapped_column(String(128))
+    admission_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legal_basis: Mapped[str | None] = mapped_column(Text)
+
+    source_url: Mapped[str | None] = mapped_column(Text)
 
 class IssuerRiskCheck(Base):
     __tablename__ = "issuer_risk_checks"
