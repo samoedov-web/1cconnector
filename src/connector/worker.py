@@ -39,6 +39,11 @@ from connector.aml.flow import (
     rescreen_known_addresses,
 )
 from connector.models import Asset, Base, Network, Wallet, utcnow
+from connector.services.registry_monitoring import (
+    RegistryMonitoringService,
+    create_registry_deterioration_alert,
+    get_due_registry_targets,
+)
 from connector.pipeline import TransactionPipeline
 from connector.rates.service import RateService
 from connector.rates.sources import (
@@ -341,6 +346,80 @@ async def main() -> None:
                 log.info("AML ре-скрининг: адресов проверено %d", screened)
             except Exception:
                 log.exception("Сбой ре-скрининга AML")
+
+        # Registry Intelligence R3:
+        # refresh due participant-level registry targets independently.
+        # A failure of one target must not stop blockchain indexing or
+        # roll back already processed registry targets.
+        try:
+            async with SessionFactory() as session:
+                due_registry_targets = await get_due_registry_targets(session)
+
+            for target in due_registry_targets:
+                try:
+                    async with SessionFactory() as session:
+                        current_target = await session.get(
+                            type(target),
+                            target.id,
+                        )
+                        if current_target is None or not current_target.enabled:
+                            continue
+
+                        registry_service = RegistryMonitoringService(session)
+                        refresh = await registry_service.refresh_target(
+                            current_target
+                        )
+                        await create_registry_deterioration_alert(
+                            session,
+                            target=current_target,
+                            refresh=refresh,
+                        )
+                        await session.commit()
+
+                    log.info(
+                        "Registry refresh: target=%s subject=%s source=%s",
+                        target.id,
+                        target.subject_reference,
+                        target.source_id,
+                    )
+
+                except Exception as exc:
+                    log.exception(
+                        "Сбой registry refresh target=%s subject=%s",
+                        target.id,
+                        target.subject_reference,
+                    )
+
+                    # Provider/target failure is itself observable, but must
+                    # not advance target schedule or stop the worker.
+                    try:
+                        async with SessionFactory() as alert_session:
+                            await send_alert(
+                                alert_session,
+                                "error",
+                                "Registry Refresh Failed",
+                                {
+                                    "event_type": "registry_refresh_failed",
+                                    "target_id": target.id,
+                                    "counterparty_id": target.counterparty_id,
+                                    "subject_reference": (
+                                        target.subject_reference
+                                    ),
+                                    "registry_type": target.registry_type,
+                                    "source_id": target.source_id,
+                                    "error_type": type(exc).__name__,
+                                    "error": str(exc),
+                                },
+                            )
+                            await alert_session.commit()
+                    except Exception:
+                        log.exception(
+                            "Не удалось сохранить alert ошибки registry refresh"
+                        )
+
+        except Exception:
+            log.exception("Сбой планировщика Registry Intelligence")
+
         await asyncio.sleep(settings.indexer_poll_interval)
 
 

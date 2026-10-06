@@ -490,3 +490,45 @@ async def create_registry_deterioration_alert(
         alert=alert,
         impact=impact,
     )
+
+
+# ---------------------------------------------------------------------------
+# R3E-3A — due target scheduling
+# ---------------------------------------------------------------------------
+
+
+async def get_due_registry_targets(
+    session: AsyncSession,
+    *,
+    now=None,
+) -> tuple[RegistryMonitoringTarget, ...]:
+    """Return enabled registry targets whose refresh is due.
+
+    A target is due when:
+    - it has never been scheduled/refreshed (next_check_at IS NULL), or
+    - next_check_at <= now.
+
+    The function is read-only and deterministic; actual provider calls are
+    performed separately by RegistryMonitoringService.
+    """
+
+    from connector.models import utcnow
+
+    effective_now = now or utcnow()
+
+    result = await session.execute(
+        select(RegistryMonitoringTarget)
+        .where(RegistryMonitoringTarget.enabled.is_(True))
+        .where(
+            (
+                RegistryMonitoringTarget.next_check_at.is_(None)
+            )
+            | (
+                RegistryMonitoringTarget.next_check_at
+                <= effective_now
+            )
+        )
+        .order_by(RegistryMonitoringTarget.id)
+    )
+
+    return tuple(result.scalars().all())
