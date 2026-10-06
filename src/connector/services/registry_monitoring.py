@@ -408,3 +408,85 @@ class RegistryMonitoringService:
             snapshot=snapshot,
             diff=diff,
         )
+
+
+# ---------------------------------------------------------------------------
+# R3E-2 — deterioration alerts
+# ---------------------------------------------------------------------------
+
+from connector.alerts import send_alert
+from connector.models import Alert
+
+
+@dataclass(frozen=True)
+class RegistryAlertResult:
+    """Alert outcome for one completed registry refresh."""
+
+    alert: Alert | None
+    impact: RegistryImpact | None
+
+
+async def create_registry_deterioration_alert(
+    session: AsyncSession,
+    *,
+    target: RegistryMonitoringTarget,
+    refresh: RegistryRefreshResult,
+) -> RegistryAlertResult:
+    """Create one alert for a newly observed adverse registry transition.
+
+    Alert generation is deliberately downstream from refresh/diff:
+    repeated provider observations with unchanged normalized facts therefore
+    do not create duplicate alerts.
+
+    No Operation, ExpectedPayment or ComplianceDecision state is modified.
+    """
+
+    diff = refresh.diff
+
+    if diff is None or not diff.is_deterioration:
+        return RegistryAlertResult(
+            alert=None,
+            impact=None,
+        )
+
+    impact = await analyze_registry_impact(
+        session,
+        target=target,
+        diff=diff,
+    )
+
+    severity = "error" if impact.has_impact else "warning"
+
+    details = {
+        "event_type": "registry_status_deterioration",
+        "target_id": target.id,
+        "counterparty_id": target.counterparty_id,
+        "subject_reference": target.subject_reference,
+        "registry_type": target.registry_type,
+        "source_id": target.source_id,
+        "previous_snapshot_id": diff.previous_snapshot_id,
+        "current_snapshot_id": diff.current_snapshot_id,
+        "previous_status": diff.previous_status,
+        "current_status": diff.current_status,
+        "status_transition": diff.status_transition,
+        "changed_fields": [
+            change.field
+            for change in diff.changes
+        ],
+        "operation_ids": list(impact.operation_ids),
+        "expected_payment_ids": list(
+            impact.expected_payment_ids
+        ),
+    }
+
+    alert = await send_alert(
+        session,
+        severity,
+        "Registry Status Deterioration",
+        details,
+    )
+
+    return RegistryAlertResult(
+        alert=alert,
+        impact=impact,
+    )
