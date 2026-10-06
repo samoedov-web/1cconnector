@@ -295,3 +295,116 @@ async def analyze_registry_impact(
         operation_ids=operation_ids,
         expected_payment_ids=expected_payment_ids,
     )
+
+
+# ---------------------------------------------------------------------------
+# R3E-1 — registry refresh
+# ---------------------------------------------------------------------------
+
+from datetime import timedelta
+
+from connector.adapters.stage3.adapters import (
+    RegistryResult,
+    get_registry_adapter,
+)
+
+
+@dataclass(frozen=True)
+class RegistryRefreshResult:
+    """Result of one participant-level registry refresh."""
+
+    target_id: int | None
+    snapshot: RegistryMonitoringSnapshot
+    diff: RegistryDiff | None
+
+
+class RegistryMonitoringService:
+    """Refresh participant registry state without mutating operation history."""
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        adapter_factory=get_registry_adapter,
+    ):
+        self.session = session
+        self.adapter_factory = adapter_factory
+
+    async def refresh_target(
+        self,
+        target: RegistryMonitoringTarget,
+    ) -> RegistryRefreshResult:
+        """Fetch and persist one immutable monitoring observation.
+
+        The service:
+        - reads the provider configured on target.source_id;
+        - preserves every provider observation as a new snapshot;
+        - compares against the immediately previous snapshot;
+        - updates only mutable scheduler state on the target.
+
+        It does NOT:
+        - modify Operation / ExpectedPayment states;
+        - rewrite operation-scoped RegistrySnapshot;
+        - create alerts;
+        - commit the transaction.
+        """
+
+        previous_result = await self.session.execute(
+            select(RegistryMonitoringSnapshot)
+            .where(RegistryMonitoringSnapshot.target_id == target.id)
+            .order_by(
+                RegistryMonitoringSnapshot.observed_at.desc(),
+                RegistryMonitoringSnapshot.id.desc(),
+            )
+            .limit(1)
+        )
+        previous = previous_result.scalar_one_or_none()
+
+        adapter = self.adapter_factory(target.source_id)
+        result: RegistryResult = await adapter.check(target.subject_reference)
+
+        if result.subject_ref != target.subject_reference:
+            raise ValueError(
+                "registry provider returned a different subject reference"
+            )
+
+        snapshot = RegistryMonitoringSnapshot(
+            target_id=target.id,
+            subject_reference=result.subject_ref,
+            source=result.source,
+            status_result=result.status,
+            snapshot_payload=result.raw_payload,
+            checksum=result.checksum,
+            observed_at=result.checked_at,
+            registry_type=result.registry_type,
+            registry_entry_id=(
+                result.registry_entry_id or result.record_number
+            ),
+            valid_from=result.valid_from,
+            valid_to=result.valid_to,
+            admission_mode=result.admission_mode,
+            application_id=result.application_id,
+            admission_date=result.admission_date,
+            legal_basis=result.legal_basis,
+            source_url=result.source_url,
+        )
+
+        self.session.add(snapshot)
+        await self.session.flush()
+
+        diff = (
+            diff_registry_snapshots(previous, snapshot)
+            if previous is not None
+            else None
+        )
+
+        target.last_checked_at = result.checked_at
+        target.next_check_at = result.checked_at + timedelta(
+            seconds=target.refresh_interval_seconds
+        )
+
+        return RegistryRefreshResult(
+            target_id=target.id,
+            snapshot=snapshot,
+            diff=diff,
+        )
