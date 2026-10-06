@@ -84,3 +84,44 @@ async def test_registry_monitoring_snapshot_is_participant_scoped(
     # Ключевой архитектурный инвариант R3:
     # participant monitoring не требует operation_id.
     assert not hasattr(RegistryMonitoringSnapshot, "operation_id")
+
+
+@pytest.mark.asyncio
+async def test_registry_monitoring_target_can_link_canonical_counterparty(
+    async_session,
+    sample_operation,
+):
+    target = RegistryMonitoringTarget(
+        counterparty_id=sample_operation.counterparty_id,
+        subject_reference="7707083893",
+        registry_type="ois",
+        source_id="cbr-ois",
+    )
+    async_session.add(target)
+    await async_session.flush()
+
+    stored = await async_session.scalar(
+        select(RegistryMonitoringTarget).where(
+            RegistryMonitoringTarget.id == target.id
+        )
+    )
+
+    assert stored is not None
+    assert stored.counterparty_id == sample_operation.counterparty_id
+
+
+@pytest.mark.asyncio
+async def test_registry_monitoring_target_counterparty_link_is_optional(
+    async_session,
+):
+    target = RegistryMonitoringTarget(
+        counterparty_id=None,
+        subject_reference="TECHNICAL-SUBJECT",
+        registry_type="ois",
+        source_id="mock",
+    )
+    async_session.add(target)
+    await async_session.flush()
+
+    assert target.id is not None
+    assert target.counterparty_id is None

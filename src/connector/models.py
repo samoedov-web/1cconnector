@@ -903,6 +903,14 @@ class RegistryMonitoringTarget(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
+    # Explicit canonical link for impact analysis.  subject_reference is an
+    # external registry identifier (for CBR OIS: INN/OGRN) and must not be
+    # guessed from Counterparty.name/onec_ref.
+    counterparty_id: Mapped[int | None] = mapped_column(
+        ForeignKey("counterparties.id"),
+        nullable=True,
+    )
+
     subject_reference: Mapped[str] = mapped_column(String(256))
     registry_type: Mapped[str] = mapped_column(String(64))
     source_id: Mapped[str] = mapped_column(String(128))
