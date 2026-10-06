@@ -244,6 +244,51 @@ class Transaction(Base):
     wallet: Mapped[Wallet] = relationship()
 
 
+
+class MarketQuoteEvidence(Base):
+    """Immutable evidence for an externally observed market quotation.
+
+    This is deliberately separate from RateSnapshot.
+
+    RateSnapshot remains the accounting result used by FIFO, 1C and reports.
+    MarketQuoteEvidence preserves the external source/material from which a
+    normalized market quote was derived.
+
+    A future FNS provider may populate this model from an official dataset,
+    but the persistence contract itself is source-neutral.
+    """
+
+    __tablename__ = "market_quote_evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    base_asset: Mapped[str] = mapped_column(String(32))
+    quote_currency: Mapped[str] = mapped_column(String(16))
+
+    rate: Mapped[Decimal] = mapped_column(AMOUNT)
+    quote_as_of: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    source: Mapped[str] = mapped_column(String(128))
+    source_url: Mapped[str | None] = mapped_column(Text)
+
+    # Version of the normalization/valuation methodology applied to the
+    # external source.  This is not the provider software version.
+    methodology_version: Mapped[str] = mapped_column(String(64))
+
+    raw_payload: Mapped[dict] = mapped_column(JSON)
+    evidence_hash: Mapped[str] = mapped_column(String(64))
+
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
+
 class RateSnapshot(Base):
     """Снимок курса на момент финальности транзакции или дату переоценки.
 
