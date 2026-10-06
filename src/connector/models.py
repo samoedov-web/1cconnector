@@ -882,6 +882,96 @@ class RegistrySnapshot(Base):
 
     source_url: Mapped[str | None] = mapped_column(Text)
 
+
+class RegistryMonitoringTarget(Base):
+    """Участник, статус которого периодически проверяется по реестру.
+
+    Это participant-level operational monitoring, а не доказательство
+    конкретной Operation. Operation-scoped evidence остаётся в
+    RegistrySnapshot.
+    """
+
+    __tablename__ = "registry_monitoring_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_reference",
+            "registry_type",
+            "source_id",
+            name="uq_registry_monitoring_target_subject_type_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    subject_reference: Mapped[str] = mapped_column(String(256))
+    registry_type: Mapped[str] = mapped_column(String(64))
+    source_id: Mapped[str] = mapped_column(String(128))
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    refresh_interval_seconds: Mapped[int] = mapped_column(Integer, default=86400)
+
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    next_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
+
+class RegistryMonitoringSnapshot(Base):
+    """Неизменяемое наблюдение фонового мониторинга реестрового участника.
+
+    Хранится отдельно от RegistrySnapshot, потому что RegistrySnapshot
+    относится к конкретной операции и не должен переписываться или
+    использоваться как глобальное текущее состояние участника.
+    """
+
+    __tablename__ = "registry_monitoring_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    target_id: Mapped[int] = mapped_column(
+        ForeignKey("registry_monitoring_targets.id")
+    )
+
+    subject_reference: Mapped[str] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(128))
+    status_result: Mapped[str] = mapped_column(String(64))
+
+    snapshot_payload: Mapped[dict] = mapped_column(JSON)
+    checksum: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    registry_type: Mapped[str | None] = mapped_column(String(64))
+    registry_entry_id: Mapped[str | None] = mapped_column(String(128))
+
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    admission_mode: Mapped[str | None] = mapped_column(String(32))
+
+    application_id: Mapped[str | None] = mapped_column(String(128))
+    admission_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    legal_basis: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
 class IssuerRiskCheck(Base):
     __tablename__ = "issuer_risk_checks"
     id: Mapped[int] = mapped_column(primary_key=True)
