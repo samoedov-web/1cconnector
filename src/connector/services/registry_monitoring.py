@@ -173,3 +173,125 @@ def diff_registry_snapshots(
         classification=classification,
         changes=tuple(changes),
     )
+
+
+# ---------------------------------------------------------------------------
+# R3D — impact analysis
+# ---------------------------------------------------------------------------
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from connector.models import (
+    Contract,
+    ExpectedPayment,
+    ExpectedPaymentStatus,
+    Invoice,
+    Operation,
+    OperationState,
+    RegistryMonitoringTarget,
+)
+
+
+IMPACTED_PAYMENT_STATUSES = (
+    ExpectedPaymentStatus.PENDING_AML,
+    ExpectedPaymentStatus.AML_REVIEW,
+    ExpectedPaymentStatus.AML_APPROVED,
+    ExpectedPaymentStatus.SENT,
+)
+
+TERMINAL_OPERATION_STATES = (
+    OperationState.CLOSED,
+    OperationState.REJECTED,
+    OperationState.EXPIRED,
+    OperationState.ORPHANED,
+)
+
+
+@dataclass(frozen=True)
+class RegistryImpact:
+    """Read-only operational impact of a registry deterioration."""
+
+    target_id: int | None
+    counterparty_id: int | None
+    subject_reference: str
+
+    operation_ids: tuple[int, ...]
+    expected_payment_ids: tuple[int, ...]
+
+    @property
+    def has_impact(self) -> bool:
+        return bool(self.operation_ids or self.expected_payment_ids)
+
+
+async def analyze_registry_impact(
+    session: AsyncSession,
+    *,
+    target: RegistryMonitoringTarget,
+    diff: RegistryDiff,
+) -> RegistryImpact:
+    """Find active operations/payments affected by registry deterioration.
+
+    Important invariants:
+    - no state/status is changed;
+    - no historical compliance decision is rewritten;
+    - subject_reference is not guessed from Counterparty attributes;
+    - canonical target.counterparty_id is the only participant link.
+    """
+
+    if diff.subject_reference != target.subject_reference:
+        raise ValueError(
+            "registry diff subject does not match monitoring target"
+        )
+
+    # A target may intentionally exist only for evidence/monitoring and have
+    # no canonical Counterparty mapping yet.
+    if target.counterparty_id is None:
+        return RegistryImpact(
+            target_id=target.id,
+            counterparty_id=None,
+            subject_reference=target.subject_reference,
+            operation_ids=(),
+            expected_payment_ids=(),
+        )
+
+    # Improvements and neutral semantic changes do not produce adverse impact.
+    if not diff.is_deterioration:
+        return RegistryImpact(
+            target_id=target.id,
+            counterparty_id=target.counterparty_id,
+            subject_reference=target.subject_reference,
+            operation_ids=(),
+            expected_payment_ids=(),
+        )
+
+    operation_result = await session.execute(
+        select(Operation.id)
+        .where(Operation.counterparty_id == target.counterparty_id)
+        .where(Operation.state.not_in(TERMINAL_OPERATION_STATES))
+        .order_by(Operation.id)
+    )
+
+    operation_ids = tuple(operation_result.scalars().all())
+
+    # ExpectedPayment.operation_id is nullable. Therefore impact ownership is
+    # resolved through the canonical invoice -> contract -> counterparty path,
+    # not only through ExpectedPayment.operation_id.
+    payment_result = await session.execute(
+        select(ExpectedPayment.id)
+        .join(Invoice, Invoice.id == ExpectedPayment.invoice_id)
+        .join(Contract, Contract.id == Invoice.contract_id)
+        .where(Contract.counterparty_id == target.counterparty_id)
+        .where(ExpectedPayment.status.in_(IMPACTED_PAYMENT_STATUSES))
+        .order_by(ExpectedPayment.id)
+    )
+
+    expected_payment_ids = tuple(payment_result.scalars().all())
+
+    return RegistryImpact(
+        target_id=target.id,
+        counterparty_id=target.counterparty_id,
+        subject_reference=target.subject_reference,
+        operation_ids=operation_ids,
+        expected_payment_ids=expected_payment_ids,
+    )
