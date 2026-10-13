@@ -40,6 +40,8 @@ services:
     build: .
     command: ["python", "-m", "connector.worker"]
     env_file: .env
+    volumes:
+      - fns_evidence:/var/lib/connector/fns-evidence
     environment:
       CONNECTOR_DATABASE_URL: postgresql+psycopg://connector:${POSTGRES_PASSWORD:-connector}@db:5432/connector
     depends_on:
@@ -50,3 +52,4 @@ services:
 
 volumes:
   pgdata:
+  fns_evidence:

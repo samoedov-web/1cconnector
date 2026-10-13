@@ -60,6 +60,23 @@ class Settings(BaseSettings):
     # cbr-ois — официальный XLSX-реестр ОИС Банка России.
     registry_source_id: str = "mock"
 
+    # --- FNS Tax Rate Intelligence (R4H) ---
+    # Tax-only official market evidence; never an automatic
+    # source for accounting RateSnapshot or VED valuation.
+    fns_rate_enabled: bool = False
+
+    # Period between background collection attempts.
+    fns_rate_refresh_hours: int = Field(default=24, ge=1, le=8760)
+
+    # Maximum permitted age of an official tax quote.
+    # Product setting, not an asserted FNS legal requirement.
+    fns_rate_max_quote_age_hours: int = Field(
+        default=48, ge=1, le=8760
+    )
+
+    # Persistent, access-controlled volume required in production.
+    fns_evidence_dir: str = "/var/lib/connector/fns-evidence"
+
     # --- AML (specs/aml-adapter.md) ---
     # Провайдер скрининга адресов (id в реестре aml-источников) и его
     # конфигурация; до подключения реального провайдера — мок с фикстурами.

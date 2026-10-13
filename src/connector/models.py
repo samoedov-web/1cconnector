@@ -289,6 +289,69 @@ class MarketQuoteEvidence(Base):
     )
 
 
+class FnsMonitoringTarget(Base):
+    """Mutable scheduling state for FNS tax quote collection.
+
+    MarketQuoteEvidence remains a separate immutable evidence layer.
+    """
+
+    __tablename__ = "fns_monitoring_targets"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "base_asset",
+            "source_id",
+            name="uq_fns_monitoring_target_asset_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    base_asset: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str] = mapped_column(String(128))
+
+    # Exact selectors from official FNS rows.
+    # NULL is allowed for existing records, but an unconfigured
+    # target must not be executed automatically.
+    organizer: Mapped[str | None] = mapped_column(
+        String(256), nullable=True
+    )
+
+    trading_pair: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
+    refresh_interval_seconds: Mapped[int] = mapped_column(
+        Integer, default=86400, nullable=False
+    )
+
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    next_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    lease_owner: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        nullable=False,
+    )
+
+
 class RateSnapshot(Base):
     """Снимок курса на момент финальности транзакции или дату переоценки.
 
