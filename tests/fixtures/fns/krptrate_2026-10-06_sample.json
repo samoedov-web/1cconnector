@@ -1,0 +1,110 @@
+[
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "BTC",
+    "naimIst": "Binance",
+    "krptKurs": "7156056,9045900000",
+    "torgPara": "BTCEUR",
+    "kursValuta": "94,8810000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "BTC",
+    "naimIst": "Binance",
+    "krptKurs": "7100525,4606000010",
+    "torgPara": "BTCBRL",
+    "kursValuta": "16,0071000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "BTC",
+    "naimIst": "Binance",
+    "krptKurs": "7100033,8509880000",
+    "torgPara": "BTCFDUSD",
+    "kursValuta": "83,5588000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "BTC",
+    "naimIst": "Binance",
+    "krptKurs": "7048110,5233352190",
+    "torgPara": "BTCIDR",
+    "kursValuta": "0,0046000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "30.09.2026 0:00:00",
+    "kodVal": "BTC",
+    "naimIst": "HTX",
+    "krptKurs": "7051476,1002069990",
+    "torgPara": "BTCUSDC",
+    "kursValuta": "84,4283000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "DOGE",
+    "naimIst": "Binance",
+    "krptKurs": "7,8921286600",
+    "torgPara": "DOGEFDUSD",
+    "kursValuta": "83,5588000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "DOGE",
+    "naimIst": "Binance",
+    "krptKurs": "7,8228989500",
+    "torgPara": "DOGEIDR",
+    "kursValuta": "0,0046000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "DOGE",
+    "naimIst": "Binance",
+    "krptKurs": "7,9177765800",
+    "torgPara": "DOGEJPY",
+    "kursValuta": "0,5310000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.10.2026 0:00:00",
+    "kodVal": "DOGE",
+    "naimIst": "Binance",
+    "krptKurs": "7,8921044800",
+    "torgPara": "DOGETRY",
+    "kursValuta": "1,7068000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "30.09.2026 0:00:00",
+    "kodVal": "DOGE",
+    "naimIst": "HTX",
+    "krptKurs": "8,0373208751",
+    "torgPara": "DOGEUSDT",
+    "kursValuta": "84,4283000000",
+    "isAnnulled": 0
+  },
+  {
+    "kursData": "01.01.2025 0:00:00",
+    "kodVal": "BEAM",
+    "naimIst": "Bitget",
+    "krptKurs": "2,6934952530",
+    "torgPara": "BEAMUSDT",
+    "kursValuta": "101,6797000000",
+    "isAnnulled": 1
+  },
+  {
+    "kursData": "01.01.2025 0:00:00",
+    "kodVal": "NEXA",
+    "naimIst": "Bitget",
+    "krptKurs": "0,0002147475",
+    "torgPara": "NEXAUSDT",
+    "kursValuta": "101,6797000000",
+    "isAnnulled": 0
+  }
+]

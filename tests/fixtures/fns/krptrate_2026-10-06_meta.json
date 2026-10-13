@@ -1,0 +1,13 @@
+{
+  "dataset": "7707329152-krptrate",
+  "release_date": "2026-10-06",
+  "structure_version": "20250519",
+  "methodology_version": "4.0",
+  "source_url": "https://data.nalog.ru/opendata/7707329152-krptrate/data-20261006-structure-20250519.zip",
+  "official_zip_sha256": "3f68c04b22c0563c43cb6e72bd864ab51c950cc701417036540c3841a17d6edd",
+  "selected_assets": [
+    "BTC",
+    "DOGE"
+  ],
+  "fixture_note": "Subset of native rows from official FNS krptrate release 2026-10-06; no field transformation."
+}
