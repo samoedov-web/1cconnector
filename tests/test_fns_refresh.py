@@ -67,6 +67,7 @@ async def test_successful_refresh_commits(async_session):
         owner=owner,
         as_of=NOW,
         observed_at=NOW + timedelta(seconds=10),
+        preflight_clock=lambda: NOW + timedelta(seconds=10),
         clock=lambda: NOW + timedelta(seconds=10),
     )
 
@@ -93,6 +94,7 @@ async def test_lost_lease_rolls_back(async_session):
             owner=owner,
             as_of=NOW,
             observed_at=NOW + timedelta(seconds=10),
+            preflight_clock=lambda: NOW + timedelta(seconds=10),
             clock=lambda: NOW + timedelta(seconds=10),
         )
 
@@ -115,6 +117,7 @@ async def test_provider_error_propagates(async_session):
             owner=owner,
             as_of=NOW,
             observed_at=NOW + timedelta(seconds=10),
+            preflight_clock=lambda: NOW + timedelta(seconds=10),
             clock=lambda: NOW + timedelta(seconds=10),
         )
 
@@ -137,6 +140,7 @@ async def test_refresh_failure_does_not_create_rate_snapshot(
             owner=owner,
             as_of=NOW,
             observed_at=NOW + timedelta(seconds=10),
+            preflight_clock=lambda: NOW + timedelta(seconds=10),
             clock=lambda: NOW + timedelta(seconds=10),
         )
 
@@ -159,6 +163,7 @@ async def test_refresh_calls_service_once(async_session):
         owner=owner,
         as_of=NOW,
         observed_at=NOW + timedelta(seconds=10),
+        preflight_clock=lambda: NOW + timedelta(seconds=10),
         clock=lambda: NOW + timedelta(seconds=10),
     )
 
@@ -185,6 +190,7 @@ async def test_delayed_provider_loses_lease(async_session):
             owner=owner,
             as_of=NOW,
             observed_at=NOW + timedelta(seconds=10),
+            preflight_clock=lambda: NOW + timedelta(seconds=10),
             clock=lambda: NOW + timedelta(seconds=31),
         )
 
@@ -208,5 +214,6 @@ async def test_naive_completion_clock_is_rejected(async_session):
             owner=owner,
             as_of=NOW,
             observed_at=NOW + timedelta(seconds=10),
+            preflight_clock=lambda: NOW + timedelta(seconds=10),
             clock=lambda: datetime(2026, 10, 13, 10, 0),
         )

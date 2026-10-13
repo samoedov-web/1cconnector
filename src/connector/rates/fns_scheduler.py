@@ -229,3 +229,30 @@ def validate_fns_target_config(
 
     if target.trading_pair != target.trading_pair.upper():
         raise ValueError("FNS trading pair must be uppercase")
+
+
+
+async def verify_fns_lease(
+    session: AsyncSession,
+    *,
+    target_id: int,
+    owner: str,
+    now: datetime,
+) -> bool:
+    """Read-only check of current FNS lease ownership.
+
+    This is an early rejection only. Completion must still
+    enforce ownership atomically after external I/O.
+    """
+    _aware(now, "now")
+    _validate_lease_owner(owner)
+
+    table = FnsMonitoringTarget
+    statement = (
+        select(table.id)
+        .where(table.id == target_id)
+        .where(table.enabled.is_(True))
+        .where(table.lease_owner == owner)
+        .where(table.lease_expires_at > now)
+    )
+    return (await session.scalar(statement)) is not None
