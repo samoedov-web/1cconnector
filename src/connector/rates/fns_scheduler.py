@@ -256,3 +256,42 @@ async def verify_fns_lease(
         .where(table.lease_expires_at > now)
     )
     return (await session.scalar(statement)) is not None
+
+
+
+async def fail_fns_lease(
+    session: AsyncSession,
+    *,
+    target_id: int,
+    owner: str,
+    now: datetime,
+    retry_seconds: int = 300,
+) -> bool:
+    """Schedule retry and release only an active owned lease.
+
+    Does not change last_checked_at. Caller owns commit/rollback.
+    """
+    _aware(now, "now")
+    _validate_lease_owner(owner)
+
+    if retry_seconds <= 0:
+        raise ValueError("retry_seconds must be positive")
+
+    table = FnsMonitoringTarget
+    statement = (
+        update(table)
+        .where(table.id == target_id)
+        .where(table.enabled.is_(True))
+        .where(table.lease_owner == owner)
+        .where(table.lease_expires_at > now)
+        .values(
+            next_check_at=now + timedelta(seconds=retry_seconds),
+            lease_owner=None,
+            lease_expires_at=None,
+        )
+        .returning(table.id)
+        .execution_options(synchronize_session=False)
+    )
+
+    result = await session.execute(statement)
+    return result.scalar_one_or_none() is not None
